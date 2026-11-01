@@ -1,0 +1,31 @@
+name: Windows build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -A x64
+      - name: Compile
+        run: cmake --build build --config Release --parallel
+      - name: Test offline
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -LiteralPath build/Release/codex_meter.exe -Destination dist/codex_meter.exe
+          ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodexMeter-windows-x64
+          path: |
+            dist/CodexMeter-*-windows-x64.zip
+            dist/CodexMeter-*-windows-x64.zip.sha256
+

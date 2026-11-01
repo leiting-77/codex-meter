@@ -1,0 +1,27 @@
+build/
+out/
+.codex-home/
+*.exe
+*.obj
+*.o
+.vscode/
+.idea/
+.tmp/
+dist/
+*.ii
+*.s
+auth.json
+settings.json
+settings.json.tmp
+profiles/
+*.log
+.env
+.env.*
+!/.env.example
+# Local icon explorations and screenshot references; publish only selected assets.
+/assets/*
+!/assets/codex-meter.png
+!/assets/codex-meter.ico
+!/assets/icon-quota-prompt.txt
+!/assets/README.md
+
