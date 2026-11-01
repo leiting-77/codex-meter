@@ -22,8 +22,7 @@ constexpr COLORREF BG=RGB(243,248,248),SURFACE=RGB(248,240,226),CARD=RGB(218,204
     BUTTON=RGB(220,207,232),TRACK=RGB(232,231,239),INK=RGB(24,23,68),
     MUTED=RGB(106,99,128),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
     LOW=RGB(232,96,88),OK=RGB(69,182,77),OLD=RGB(151,145,171),WARM=RGB(242,201,76),
-    TRAFFIC_RED=RGB(238,99,88),TRAFFIC_YELLOW=RGB(237,184,63),TRAFFIC_GREEN=RGB(57,181,74),
-    DELETE_BG=RGB(247,214,218);
+    TRAFFIC_RED=RGB(238,99,88),TRAFFIC_YELLOW=RGB(237,184,63),TRAFFIC_GREEN=RGB(57,181,74);
 enum Command { Expand=101,Refresh,Add,LinkLocal,ChooseExe,Cancel,Hide,Quit,Topmost,About,
     Interval30,Interval60,Interval300,Opaque,Translucent,ProfileRefresh=1000,ProfileLogin=2000,ProfileRemove=3000,
     Preferences=120,WindowClose=4000,WindowCollapse,WindowExpand,DockToggle=4100,ProfileRename=5000 };
@@ -346,16 +345,15 @@ void compact(HDC dc,const View& v,int y,int w) {
     if(old)text(dc,L"!",88,y+6,10,16,LOW,12,FW_BOLD);
 }
 void removeGlyph(HDC dc,int x,int y,bool hover) {
-    auto brush=hover?CreateSolidBrush(DELETE_BG):reinterpret_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
-    auto pen=CreatePen(PS_SOLID,1,hover?LOW:MUTED);
-    auto ob=SelectObject(dc,brush),op=SelectObject(dc,pen);
-    Ellipse(dc,px(x),px(y),px(x+24),px(y+24));
-    SelectObject(dc,ob);SelectObject(dc,op);DeleteObject(pen);
-    if(hover)DeleteObject(brush);
-    auto cross=CreatePen(PS_SOLID,2,LOW);auto old=SelectObject(dc,cross);
-    MoveToEx(dc,px(x+8),px(y+8),nullptr);LineTo(dc,px(x+16),px(y+16));
-    MoveToEx(dc,px(x+16),px(y+8),nullptr);LineTo(dc,px(x+8),px(y+16));
-    SelectObject(dc,old);DeleteObject(cross);
+    // Keep the 24px hit target while drawing only a quiet, rounded cross.
+    const auto color=hover?LOW:MUTED;
+    Gdiplus::Graphics graphics(dc);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    Gdiplus::Pen pen(Gdiplus::Color(255,GetRValue(color),GetGValue(color),GetBValue(color)),static_cast<float>(1.4*scale));
+    pen.SetStartCap(Gdiplus::LineCapRound);pen.SetEndCap(Gdiplus::LineCapRound);
+    graphics.DrawLine(&pen,static_cast<float>(px(x+8)),static_cast<float>(px(y+8)),
+        static_cast<float>(px(x+16)),static_cast<float>(px(y+16)));
+    graphics.DrawLine(&pen,static_cast<float>(px(x+16)),static_cast<float>(px(y+8)),
+        static_cast<float>(px(x+8)),static_cast<float>(px(y+16)));
 }
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
