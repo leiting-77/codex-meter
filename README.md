@@ -8,27 +8,27 @@ Windows 原生 Codex 额度悬浮窗。淡紫、米黄色主题，支持多个�
 
 ## 功能演示
 
-以下为 Windows 上运行 v0.3.1 `--demo` 模式的真实界面截图，账号、额度和重置卡均为演示数据，不包含真实账号信息。磨砂背景随桌面背景和系统支持情况变化。
+以下图片复用 v0.3.1 的界面绘制代码，以 200% 分辨率直接导出无损 PNG；使用实色背景便于阅读，未包含系统合成的磨砂材质和窗口阴影。账号、额度和重置卡均为演示数据，不包含真实账号信息。
 
 ### 紧凑悬浮窗
 
 日常只保留账号显示名称、短周期和周额度进度条；右上角红、黄、绿按钮控制关闭、收起和展开。
 
-<p><img src="docs/images/compact.jpg" width="320" alt="紧凑悬浮窗：两个演示账号的短周期和周额度进度条"></p>
+<p><a href="docs/images/compact.png"><img src="docs/images/compact.png" width="320" alt="紧凑悬浮窗：两个演示账号的短周期和周额度进度条"></a></p>
 
 ### 额度详情
 
 展开后查看每个周期的剩余额度、重置倒计时，以及服务返回的重置卡数量和到期时间。账号卡右上角的 × 用于移除账号。
 
-<p><img src="docs/images/details.jpg" width="440" alt="额度详情：多账号额度、重置时间、重置卡数量和到期明细"></p>
+<p><a href="docs/images/details.png"><img src="docs/images/details.png" width="440" alt="额度详情：多账号额度、重置时间、重置卡数量和到期明细"></a></p>
 
 ### 屏幕边缘收纳
 
 拖至屏幕边缘后收纳成圆环条，下图展示贴顶横向形态；贴左右边缘时纵向排列。内圈米黄表示短周期额度，外圈淡紫表示周额度；只有周额度时显示单圈。中心是默认文字头像，单击恢复窗口，拖动可沿当前边缘移动。
 
-<p><img src="docs/images/edge-dock.jpg" width="168" alt="贴顶收纳条：两个演示账号的文字头像和内外双额度圆环"></p>
+<p><a href="docs/images/edge-dock.png"><img src="docs/images/edge-dock.png" width="168" alt="贴顶收纳条：两个演示账号的文字头像和内外双额度圆环"></a> &nbsp; <a href="docs/images/edge-dock-vertical.png"><img src="docs/images/edge-dock-vertical.png" width="84" alt="左右贴边时的纵向额度圆环条"></a></p>
 
-截图复现方式见 [演示截图说明](docs/images/README.md)。
+点击图片可查看两倍分辨率原图。导出方式见 [演示图片说明](docs/images/README.md)。
 
 ## 直接运行
 

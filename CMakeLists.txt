@@ -36,3 +36,10 @@ if(BUILD_TESTING)
 endif()
 install(TARGETS codex_meter RUNTIME DESTINATION .)
 
+# Explicit documentation-only target; omitted from normal builds and releases.
+add_executable(render_demo EXCLUDE_FROM_ALL scripts/render-demo.cpp)
+target_link_libraries(render_demo PRIVATE meter_options user32 gdi32 shell32 ole32 uuid comdlg32 comctl32 dwmapi gdiplus)
+if(MINGW)
+  target_link_options(render_demo PRIVATE -municode)
+endif()
+
