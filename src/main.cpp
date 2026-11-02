@@ -439,10 +439,13 @@ void detail(HDC dc,const View& v,int y,int w,int index) {
     }
     for(size_t i=0;i<v.snapshot.credits.size();++i) {
         const auto& c=v.snapshot.credits[i];
+        const auto now=std::time(nullptr);
+        const bool expired=c.expires&&*c.expires<=now;
+        const bool urgent=c.expires&&(expired||*c.expires-now<3*24*60*60);
         auto label=L"卡片 "+std::to_wstring(i+1);
         if(!c.status.empty()&&c.status!="available")label+=L" · "+wide(c.status);
         text(dc,label,22,row,w-244,18,MUTED,10);
-        text(dc,c.expires?date(c.expires)+L" 到期":L"到期时间未提供",w-218,row,194,18,MUTED,10,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        text(dc,c.expires?date(c.expires)+(expired?L" 已到期":L" 到期"):L"到期时间未提供",w-218,row,194,18,urgent?LOW:MUTED,10,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
         row+=20;
     }
     if(incompleteCredits(v.snapshot)){text(dc,L"服务仅返回部分卡片明细",22,row,w-44,18,MUTED,10);row+=20;}
@@ -1018,7 +1021,7 @@ void demoData(){
             {"secondary",{{"usedPercent",i?39:16},{"windowDurationMins",10080},{"resetsAt",std::time(nullptr)+259200}}}}},
             {"rateLimitResetCredits",{{"availableCount",i?0:2},{"credits",Json::array()}}}};
         if(i==0)r["rateLimitResetCredits"]["credits"]={
-            {{"id","demo-1"},{"status","available"},{"expiresAt",std::time(nullptr)+86400*4}},
+            {{"id","demo-1"},{"status","available"},{"expiresAt",std::time(nullptr)+86400*2}},
             {{"id","demo-2"},{"status","available"},{"expiresAt",std::time(nullptr)+86400*10}}};
         v.snapshot=parseLimits(r);v.synced=std::time(nullptr);views.push_back(std::move(v));
         auto& sample=views.back();sample.usage.available=true;sample.usageChecked=std::time(nullptr);
