@@ -1,9 +1,12 @@
 #include "../src/platform.hpp"
 #include "../src/ring_renderer.hpp"
+#include "../src/surface_renderer.hpp"
 #include <iostream>
 #define CHECK(c) do { ++checks; if (!(c)) throw std::runtime_error("Failed: " #c); } while(0)
 int main() {
     int checks=0;
+    ULONG_PTR graphicsToken=0;Gdiplus::GdiplusStartupInput graphicsInput;
+    if(Gdiplus::GdiplusStartup(&graphicsToken,&graphicsInput,nullptr)!=Gdiplus::Ok)return 1;
     HDC dc=CreateCompatibleDC(nullptr);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=128;info.bmiHeader.biHeight=-128;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void* bits=nullptr;auto bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);auto old=SelectObject(dc,bitmap);
@@ -22,7 +25,32 @@ int main() {
             CHECK(GetPixel(dc,64,64)==background); // Full rings must never fill their center.
         }
         DeleteObject(backgroundBrush);
-        std::cout<<checks<<" GDI ring rendering checks passed\n";
-    } catch(const std::exception& e){std::cerr<<e.what()<<"\n";SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return 1;}
-    SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return 0;
+        const COLORREF tint=RGB(243,248,248),red=RGB(238,99,88);
+        const uint32_t tintRgb=0x00F3F8F8u,redRgb=0x00EE6358u;
+        for(double scale:{1.0,1.25,1.5,2.0}) {
+            std::fill_n(static_cast<uint32_t*>(bits),128*128,tintRgb);
+            int size=static_cast<int>(16*scale);
+            CHECK(meter::paintSurfaceShape(dc,8,8,size,size,0,red,CLR_INVALID,tint,true,true));
+            auto pixels=static_cast<uint32_t*>(bits);
+            CHECK(meter::resolveSurfacePixel(pixels[0],tint,true)>>24==110);
+            CHECK(pixels[(8+size/2)*128+8+size/2]==(0xFF000000u|redRgb));
+            bool partial=false,valid=true,noWhiteFringe=true;
+            for(int i=0;i<128*128;++i) {
+                auto pixel=meter::resolveSurfacePixel(pixels[i],tint,true);unsigned a=pixel>>24;
+                partial|=a>110&&a<255;
+                valid&=(pixel&255)<=a&&((pixel>>8)&255)<=a&&((pixel>>16)&255)<=a;
+                if(a==255)noWhiteFringe&=(pixel&0xFFFFFFu)==redRgb;
+            }
+            CHECK(partial);CHECK(valid);CHECK(noWhiteFringe);
+            CHECK(meter::resolveSurfacePixel(tintRgb,tint,false)==(0xFF000000u|tintRgb));
+        }
+        // Respect the parent's content clip; shapes must not leak into header/footer.
+        std::fill_n(static_cast<uint32_t*>(bits),128*128,tintRgb);
+        int saved=SaveDC(dc);IntersectClipRect(dc,20,20,40,40);
+        CHECK(meter::paintSurfaceShape(dc,8,8,60,28,12,red,CLR_INVALID,tint,true));RestoreDC(dc,saved);
+        CHECK(static_cast<uint32_t*>(bits)[25*128+19]==tintRgb);
+        CHECK((static_cast<uint32_t*>(bits)[25*128+25]>>24)==255);
+        std::cout<<checks<<" GDI and glass surface rendering checks passed\n";
+    } catch(const std::exception& e){std::cerr<<e.what()<<"\n";SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);Gdiplus::GdiplusShutdown(graphicsToken);return 1;}
+    SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);Gdiplus::GdiplusShutdown(graphicsToken);return 0;
 }

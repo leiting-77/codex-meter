@@ -31,8 +31,8 @@ void exportDemo(const fs::path& path,bool detailMode,int side) {
         control(collapseButton,WindowCollapse,width-51,9,18,18);
         control(expandButton,WindowExpand,width-27,9,18,18);
         if(expanded) {
-            control(refreshButton,Refresh,10,height-29,60,24);
-            control(addButton,Add,width-102,height-29,92,24);
+            control(refreshButton,Refresh,12,height-35,60,28);
+            control(addButton,Add,width-104,height-35,92,28);
         }
     }
     GdiFlush();

@@ -3,6 +3,7 @@
 #include "ui_geometry.hpp"
 #include "ring_renderer.hpp"
 #include "usage_cache.hpp"
+#include "surface_renderer.hpp"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <commctrl.h>
@@ -19,7 +20,7 @@
 using namespace meter;
 namespace {
 constexpr UINT WM_RESULTS=WM_APP+1,WM_TRAY=WM_APP+2,WM_DOCK=WM_APP+3;
-constexpr int HEADER=34,FOOTER=34;
+constexpr int HEADER=34,FOOTER=42;
 constexpr COLORREF BG=RGB(243,248,248),SURFACE=RGB(248,240,226),CARD=RGB(218,204,239),
     BUTTON=RGB(220,207,232),TRACK=RGB(232,231,239),INK=RGB(24,23,68),
     MUTED=RGB(106,99,128),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
@@ -56,6 +57,7 @@ std::string pressedRemove;
 HWND tooltip=nullptr;
 std::wstring tooltipText;
 int hotRemove=-1;
+int hotButton=0;
 double scale=1;
 int scrollY=0,totalContent=0,viewContent=0;
 UINT taskbarCreated=0;
@@ -79,6 +81,7 @@ void text(HDC dc,const std::wstring& s,int x,int y,int w,int h,COLORREF color=IN
 }
 void box(HDC dc,int x,int y,int w,int h,COLORREF fill,int radius=0,COLORREF border=CLR_INVALID){
     if(radius&&graphicsToken) {
+        if(paintSurfaceShape(dc,px(x),px(y),px(w),px(h),static_cast<float>(px(radius)),fill,border,BG,glassActive))return;
         Gdiplus::Graphics graphics(dc);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         auto color=[](COLORREF value){return Gdiplus::Color(255,GetRValue(value),GetGValue(value),GetBValue(value));};
         const float left=static_cast<float>(px(x))+.5f,top=static_cast<float>(px(y))+.5f;
@@ -201,10 +204,7 @@ void shapeWindow(int width,int height) {
     }
 }
 uint32_t surfacePixel(uint32_t pixel) {
-    const uint32_t rgb=pixel&0xFFFFFFu;
-    constexpr uint32_t background=((BG&0xFFu)<<16)|(BG&0xFF00u)|((BG>>16)&0xFFu);
-    const unsigned alpha=glassActive&&rgb==background?110:255;
-    return (alpha<<24)|((((rgb>>16)&255)*alpha/255)<<16)|((((rgb>>8)&255)*alpha/255)<<8)|((rgb&255)*alpha/255);
+    return resolveSurfacePixel(pixel,BG,glassActive);
 }
 void applyStyle(){
     applyGlass();
@@ -271,8 +271,8 @@ void layout(bool initial=false) {
     MoveWindow(collapseButton,px(width-51),px(9),px(18),px(18),TRUE);
     MoveWindow(expandButton,px(width-27),px(9),px(18),px(18),TRUE);
     ShowWindow(addButton,footer?SW_SHOW:SW_HIDE);ShowWindow(refreshButton,footer?SW_SHOW:SW_HIDE);
-    MoveWindow(addButton,px(width-102),px(height-29),px(92),px(24),TRUE);
-    MoveWindow(refreshButton,px(10),px(height-29),px(60),px(24),TRUE);
+    MoveWindow(addButton,px(width-104),px(height-35),px(92),px(28),TRUE);
+    MoveWindow(refreshButton,px(12),px(height-35),px(60),px(28),TRUE);
     for(HWND b:{closeButton,collapseButton,expandButton,addButton,refreshButton})
         SendMessageW(b,WM_SETFONT,reinterpret_cast<WPARAM>(font(12)),TRUE);
     InvalidateRect(window,nullptr,FALSE);layoutBusy=false;
@@ -784,6 +784,16 @@ public:
         BitBlt(target,0,0,width,height,dc,0,0,SRCCOPY);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
     }
 };
+LRESULT CALLBACK buttonProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp,UINT_PTR,DWORD_PTR) {
+    const int id=GetDlgCtrlID(hwnd);
+    if(msg==WM_MOUSEMOVE) {
+        if(hotButton!=id){hotButton=id;InvalidateRect(hwnd,nullptr,FALSE);}
+        TRACKMOUSEEVENT tracking{sizeof(tracking),TME_LEAVE,hwnd,0};TrackMouseEvent(&tracking);
+    } else if(msg==WM_MOUSELEAVE) {
+        if(hotButton==id)hotButton=0;InvalidateRect(hwnd,nullptr,FALSE);
+    } else if(msg==WM_ERASEBKGND)return 1;
+    return DefSubclassProc(hwnd,msg,wp,lp);
+}
 LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     if(msg==taskbarCreated&&window){trayAdd();return 0;}
     switch(msg){
@@ -794,8 +804,9 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     case WM_NCHITTEST:return HTCLIENT;
     case WM_CREATE:{
         window=hwnd;scale=GetDpiForWindow(hwnd)/96.0;
-        auto button=[&](int id,const wchar_t* label){return CreateWindowExW(0,L"BUTTON",label,
-            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,10,10,hwnd,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),nullptr,nullptr);};
+        auto button=[&](int id,const wchar_t* label){auto child=CreateWindowExW(0,L"BUTTON",label,
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,10,10,hwnd,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),nullptr,nullptr);
+            SetWindowSubclass(child,buttonProc,1,0);return child;};
         closeButton=button(WindowClose,L"关闭");
         collapseButton=button(WindowCollapse,L"收起");
         expandButton=button(WindowExpand,L"展开");
@@ -818,11 +829,7 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
         int w=logical(d->rcItem.right-d->rcItem.left),h=logical(d->rcItem.bottom-d->rcItem.top);
         if(d->CtlID==WindowClose||d->CtlID==WindowCollapse||d->CtlID==WindowExpand) {
             COLORREF color=d->CtlID==WindowClose?TRAFFIC_RED:d->CtlID==WindowCollapse?TRAFFIC_YELLOW:TRAFFIC_GREEN;
-            {
-                Gdiplus::Graphics graphics(d->hDC);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-                Gdiplus::SolidBrush brush(Gdiplus::Color(255,GetRValue(color),GetGValue(color),GetBValue(color)));
-                graphics.FillEllipse(&brush,static_cast<float>(px(1)),static_cast<float>(px(1)),static_cast<float>(px(16)),static_cast<float>(px(16)));
-            }
+            paintSurfaceShape(d->hDC,px(1),px(1),px(16),px(16),0,color,CLR_INVALID,BG,glassActive,true);
             if(d->itemState&ODS_SELECTED) {
                 auto shade=CreatePen(PS_SOLID,1,INK);
                 auto old=SelectObject(d->hDC,shade);SetBkMode(d->hDC,TRANSPARENT);
@@ -839,10 +846,13 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
             }
             return TRUE;
         }
-        box(d->hDC,0,0,w,h,(d->itemState&ODS_SELECTED)?TRACK:BUTTON,6,LINE);
+        const auto fill=(d->itemState&ODS_SELECTED)?RGB(201,185,222):hotButton==static_cast<int>(d->CtlID)?RGB(212,197,230):BUTTON;
+        box(d->hDC,0,0,w,h,fill,12);
+        if((d->itemState&ODS_FOCUS)&&!(d->itemState&ODS_NOFOCUSRECT))
+            box(d->hDC,2,2,w-4,h-4,fill,8,ACCENT);
         wchar_t title[64]{};GetWindowTextW(d->hwndItem,title,64);
         text(d->hDC,title,0,0,w,h,INK,12,FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
-        if(d->itemState&ODS_FOCUS)DrawFocusRect(d->hDC,&d->rcItem);return TRUE;
+        return TRUE;
     }
     case WM_RESULTS:if(worker)results();return 0;
     case WM_NOTIFY:{

@@ -2,7 +2,7 @@
 
 <p align="center"><img src="assets/codex-meter.png" width="112" alt="Codex Meter 图标"></p>
 
-Windows 原生 Codex 额度悬浮窗。淡紫、米黄色主题，支持多个账号、周额度、重置时间、重置卡明细和七天 Token 用量。当前版本 **0.3.2**，本项目为独立社区工具，与 OpenAI 无隶属关系。
+Windows 原生 Codex 额度悬浮窗。淡紫、米黄色主题，支持多个账号、周额度、重置时间、重置卡明细和七天 Token 用量。当前版本 **0.3.3**，本项目为独立社区工具，与 OpenAI 无隶属关系。
 
 [下载 Windows x64 版](https://github.com/leiting-77/codex-meter/releases/latest) · [更新记录](CHANGELOG.md) · [使用与验证范围](TESTING.md)
 

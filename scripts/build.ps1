@@ -16,7 +16,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Model test compilation failed' }
         & ./build/model_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Model tests failed' }
-        & $compiler @common tests/render_tests.cpp -o build/render_tests.exe -lgdi32 -luser32 -lshell32 -lole32 -luuid
+        & $compiler @common tests/render_tests.cpp -o build/render_tests.exe -lgdi32 -luser32 -lshell32 -lole32 -luuid -lgdiplus
         if ($LASTEXITCODE -ne 0) { throw 'Rendering test compilation failed' }
         & ./build/render_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Rendering tests failed' }
