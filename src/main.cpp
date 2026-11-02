@@ -21,6 +21,7 @@ using namespace meter;
 namespace {
 constexpr UINT WM_RESULTS=WM_APP+1,WM_TRAY=WM_APP+2,WM_DOCK=WM_APP+3;
 constexpr int HEADER=34,FOOTER=42;
+constexpr int DETAIL_WIDTH=380,DETAIL_GAP=8,USAGE_HEIGHT=116,USAGE_SPACE=130;
 constexpr COLORREF BG=RGB(243,248,248),SURFACE=RGB(248,240,226),CARD=RGB(218,204,239),
     BUTTON=RGB(220,207,232),TRACK=RGB(232,231,239),INK=RGB(24,23,68),
     MUTED=RGB(106,99,128),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
@@ -170,11 +171,11 @@ void ring(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,boo
 int cardHeight(const View& v) {
     int rows=std::max(1,static_cast<int>(v.snapshot.windows.size()));
     int credits=std::max(1,static_cast<int>(v.snapshot.credits.size()));
-    return 62+rows*55+28+credits*22+(incompleteCredits(v.snapshot)?22:0)+(v.failed?42:0)+14+188;
+    return 54+rows*45+24+credits*20+(incompleteCredits(v.snapshot)?20:0)+(v.failed?36:0)+12+USAGE_SPACE;
 }
 int contentHeight(){
     if(views.empty())return 100;
-    int h=4;for(const auto& v:views)h+=expanded?cardHeight(v)+10:50;return h+4;
+    int h=4;for(const auto& v:views)h+=expanded?cardHeight(v)+DETAIL_GAP:50;return h+4;
 }
 void persist() {
     if(demo)return;
@@ -254,7 +255,7 @@ void layout(bool initial=false) {
         InvalidateRect(window,nullptr,FALSE);layoutBusy=false;return;
     }
     totalContent=contentHeight();
-    int width=expanded?440:320;
+    int width=expanded?DETAIL_WIDTH:320;
     int maxHeight=std::max(90,logical(info.rcWork.bottom-info.rcWork.top)-80);
     int footer=(expanded||views.empty())?FOOTER:0;
     int height=HEADER+std::min(totalContent,expanded?maxHeight-HEADER-footer:208)+footer;
@@ -379,73 +380,73 @@ std::wstring tokenAmount(long double value) {
     else if(value>=1e3L){value/=1e3L;unit=L"K";}
     std::wostringstream out;out<<std::fixed<<std::setprecision(*unit?1:0)<<value<<unit;return out.str();
 }
-int usageChartTop(const View& v,int top){return top+cardHeight(v)-194;}
+int usageChartTop(const View& v,int top){return top+cardHeight(v)-USAGE_SPACE-4;}
 void usageChart(HDC dc,const View& v,int top,int width) {
-    const int left=22,area=width-44,step=area/7,baseline=top+126;
-    box(dc,left-4,top,area+8,174,RGB(237,230,246),16);
-    text(dc,L"近七天 Token 用量",left+8,top+8,180,22,INK,12,FW_MEDIUM);
+    const int left=22,area=width-44,step=area/7,baseline=top+82;
+    box(dc,left-4,top,area+8,USAGE_HEIGHT,RGB(237,230,246),14);
+    text(dc,L"近七天 Token 用量",left+8,top+5,150,18,INK,11,FW_MEDIUM);
     auto dates=usageDates();long double total=0,peak=1;int known=0;
     for(const auto& date:dates) {auto it=v.usage.days.find(date);if(it!=v.usage.days.end()){
         total+=it->second;peak=std::max(peak,static_cast<long double>(it->second));++known;}}
     const auto summary=known?(known==7?L"合计 ":L"已知合计 ")+tokenAmount(total):L"暂无数据";
-    text(dc,summary,left+180,top+9,area-190,20,MUTED,10,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    text(dc,summary,left+150,top+5,area-160,18,MUTED,9,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
     for(int i=0;i<7;++i) {
         int cx=left+step*i+step/2;auto it=v.usage.days.find(dates[i]);bool has=it!=v.usage.days.end();
-        const int height=has&&it->second>0?std::max(3,static_cast<int>(it->second/peak*70)):0;
-        box(dc,cx-10,baseline,20,2,RGB(217,206,232),2);
-        if(height)box(dc,cx-10,baseline-height,20,height,i==6?WARM:RGB(239,214,134),8);
-        text(dc,has?tokenAmount(static_cast<long double>(it->second)):L"—",cx-step/2,baseline-height-20,step,18,has?INK:MUTED,9,FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
-        text(dc,i==6?L"今天":wide(dates[i].substr(5)),cx-step/2,baseline+5,step,18,i==6?INK:MUTED,10,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        const int height=has&&it->second>0?std::max(2,static_cast<int>(it->second/peak*40)):0;
+        box(dc,cx-7,baseline,14,2,RGB(217,206,232),2);
+        if(height)box(dc,cx-7,baseline-height,14,height,i==6?WARM:RGB(239,214,134),7);
+        text(dc,has?tokenAmount(static_cast<long double>(it->second)):L"—",cx-step/2,baseline-height-16,step,14,has?INK:MUTED,9,FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        text(dc,i==6?L"今天":wide(dates[i].substr(5)),cx-step/2,baseline+4,step,16,i==6?INK:MUTED,9,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
     }
     std::wstring note=demo?L"演示数据 · 悬停竖条查看明细":!v.usage.message.empty()?wide(v.usage.message):
         v.usageUpdated?L"更新 "+date(v.usageUpdated)+L" · 按服务日期展示":
         !v.usageChecked?L"正在等待每日用量；可按 F5 刷新":L"服务未提供这七天的用量";
-    text(dc,note,left+8,top+153,area-16,16,MUTED,9);
+    text(dc,note,left+8,top+103,area-16,11,MUTED,9);
 }
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
     box(dc,10,y,w-20,height,CARD,20);
-    text(dc,wide(v.profile.name.empty()?"ChatGPT":v.profile.name),22,y+9,w-186,25,INK,14,FW_MEDIUM);
+    text(dc,wide(v.profile.name.empty()?"ChatGPT":v.profile.name),22,y+9,w-186,22,INK,13,FW_MEDIUM);
     removeGlyph(dc,w-48,y+10,hotRemove==index);
     text(dc,demo?L"演示数据":(v.busy?L"同步中":v.paused?L"已暂停":v.failed?L"更新失败":stale(v)?L"旧数据":v.synced?L"已同步":L"未连接"),
          w-154,y+11,90,21,v.failed?LOW:MUTED,11,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
     std::wstring sub=wide(v.profile.plan);
     if(v.profile.local)sub+=L" · 本机 Codex";
     if(v.synced)sub+=L" · "+date(static_cast<int64_t>(v.synced));
-    text(dc,sub,22,y+34,w-44,18,MUTED,11);
-    int row=y+62;
-    if(v.snapshot.windows.empty()){text(dc,v.synced?L"服务未返回额度窗口":L"额度尚未读取",22,row,w-44,24,MUTED);row+=55;}
+    text(dc,sub,22,y+31,w-44,16,MUTED,10);
+    int row=y+54;
+    if(v.snapshot.windows.empty()){text(dc,v.synced?L"服务未返回额度窗口":L"额度尚未读取",22,row,w-44,22,MUTED);row+=45;}
     for(const auto& b:v.snapshot.windows) {
         auto label=duration(b);
         if(v.snapshot.windows.size()>2||b.bucketId!="codex")
             label=wide(b.bucketName.empty()?b.bucketId:b.bucketName)+L" · "+label;
         text(dc,label,22,row,w-146,19,MUTED,11);
-        text(dc,percent(b.remaining)+L" 剩余",w-120,row,96,19,INK,12,FW_MEDIUM,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
-        progress(dc,22,row+23,w-44,8,b.remaining,stale(v));
-        text(dc,reset(b),22,row+34,w-44,18,MUTED,11);
-        row+=55;
+        text(dc,percent(b.remaining)+L" 剩余",w-120,row,96,19,INK,11,FW_MEDIUM,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        progress(dc,22,row+20,w-44,6,b.remaining,stale(v));
+        text(dc,reset(b),22,row+28,w-44,16,MUTED,10);
+        row+=45;
     }
-    text(dc,L"重置卡",22,row,90,22,INK,12,FW_MEDIUM);
+    text(dc,L"重置卡",22,row,90,20,INK,11,FW_MEDIUM);
     text(dc,v.snapshot.creditCount?std::to_wstring(*v.snapshot.creditCount)+L" 张可用":L"未提供",
-        w-130,row,106,22,MUTED,12,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
-    row+=28;
+        w-130,row,106,20,MUTED,11,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    row+=24;
     if(v.snapshot.credits.empty()) {
         std::wstring message;
         if(!v.snapshot.creditCount)message=L"服务未返回重置卡信息";
         else if(*v.snapshot.creditCount==0)message=L"没有可用重置卡";
         else message=L"未返回卡片明细";
-        text(dc,message,22,row,w-44,20,MUTED,11);row+=22;
+        text(dc,message,22,row,w-44,18,MUTED,10);row+=20;
     }
     for(size_t i=0;i<v.snapshot.credits.size();++i) {
         const auto& c=v.snapshot.credits[i];
         auto label=L"卡片 "+std::to_wstring(i+1);
         if(!c.status.empty()&&c.status!="available")label+=L" · "+wide(c.status);
-        text(dc,label,22,row,w-240,20,MUTED,11);
-        text(dc,c.expires?date(c.expires)+L" 到期":L"到期时间未提供",w-222,row,198,20,MUTED,11,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
-        row+=22;
+        text(dc,label,22,row,w-244,18,MUTED,10);
+        text(dc,c.expires?date(c.expires)+L" 到期":L"到期时间未提供",w-218,row,194,18,MUTED,10,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        row+=20;
     }
-    if(incompleteCredits(v.snapshot)){text(dc,L"服务仅返回部分卡片明细",22,row,w-44,20,MUTED,11);row+=22;}
-    if(v.failed)text(dc,wide(v.status)+(v.synced?L"（保留上次数据）":L""),22,row+3,w-44,38,LOW,11,FW_NORMAL,DT_LEFT|DT_WORDBREAK);
+    if(incompleteCredits(v.snapshot)){text(dc,L"服务仅返回部分卡片明细",22,row,w-44,18,MUTED,10);row+=20;}
+    if(v.failed)text(dc,wide(v.status)+(v.synced?L"（保留上次数据）":L""),22,row+2,w-44,34,LOW,10,FW_NORMAL,DT_LEFT|DT_WORDBREAK);
     usageChart(dc,v,usageChartTop(v,y),w);
 }
 void dockedPaint(HDC dc,int width,int height) {
@@ -512,7 +513,7 @@ void paint(HDC dc) {
         int y=HEADER+4-scrollY;
         for(size_t index=0;index<views.size();++index) {
             const auto& v=views[index];
-            int h=expanded?cardHeight(v)+10:50;
+            int h=expanded?cardHeight(v)+DETAIL_GAP:50;
             if(y+h>=HEADER&&y<=HEADER+viewContent) {
                 if(expanded)detail(mem,v,y,width-4,static_cast<int>(index));else compact(mem,v,y,width);
             }
@@ -648,13 +649,13 @@ int accountAt(int x,int y){
     }
     if(y<HEADER||y>=HEADER+viewContent)return -1;
     int top=HEADER+4-scrollY;
-    for(size_t i=0;i<views.size();++i){int h=expanded?cardHeight(views[i]):46;if(y>=top&&y<top+h)return static_cast<int>(i);top+=expanded?h+10:50;}
+    for(size_t i=0;i<views.size();++i){int h=expanded?cardHeight(views[i]):46;if(y>=top&&y<top+h)return static_cast<int>(i);top+=expanded?h+DETAIL_GAP:50;}
     return -1;
 }
 int removeAt(int x,int y){
     if(!expanded||settings.docked)return -1;
     RECT client{};GetClientRect(window,&client);int top=HEADER+4-scrollY;
-    for(size_t i=0;i<views.size();++i){if(removeHit(x,y,logical(client.right),top,HEADER,HEADER+viewContent))return static_cast<int>(i);top+=cardHeight(views[i])+10;}
+    for(size_t i=0;i<views.size();++i){if(removeHit(x,y,logical(client.right),top,HEADER,HEADER+viewContent))return static_cast<int>(i);top+=cardHeight(views[i])+DETAIL_GAP;}
     return -1;
 }
 void menu(POINT screen,int selected=-1) {
@@ -869,10 +870,10 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
                     if(!v.status.empty())tooltipText+=L"\n"+wide(v.status);
                     if(settings.docked)tooltipText+=L"\n内圈米黄：短周期；外圈淡紫：周额度\n点击展开，滚轮切换账号";
                     if(expanded&&!settings.docked) {
-                        int cardTop=HEADER+4-scrollY;for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+10;
+                        int cardTop=HEADER+4-scrollY;for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+DETAIL_GAP;
                         int chart=usageChartTop(v,cardTop),x=logical(p.x),y=logical(p.y);
                         RECT client{};GetClientRect(hwnd,&client);int step=(logical(client.right)-48)/7;
-                        if(y>=chart+32&&y<chart+150&&x>=22&&x<22+step*7) {
+                        if(y>=chart+24&&y<chart+102&&x>=22&&x<22+step*7) {
                             int day=(x-22)/step;auto dates=usageDates();auto found=v.usage.days.find(dates[day]);
                             tooltipText=compactName(v.profile)+L"\n"+wide(dates[day])+L"（服务日期）\n"+
                                 (found==v.usage.days.end()?L"无数据":std::to_wstring(found->second)+L" Tokens");

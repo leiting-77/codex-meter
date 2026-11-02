@@ -9,7 +9,7 @@ void exportDemo(const fs::path& path,bool detailMode,int side) {
     expanded=detailMode;settings.docked=side!=0;settings.dockSide=side;
     totalContent=settings.docked?static_cast<int>(views.size())*84:contentHeight();
     viewContent=totalContent;scrollY=0;
-    const int width=settings.docked?(side>=3?totalContent:84):(expanded?440:320);
+    const int width=settings.docked?(side>=3?totalContent:84):(expanded?DETAIL_WIDTH:320);
     const int height=settings.docked?(side>=3?90:totalContent):HEADER+totalContent+(expanded?FOOTER:0);
     SetWindowPos(window,nullptr,0,0,px(width),px(height),SWP_NOZORDER|SWP_NOACTIVATE);
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
