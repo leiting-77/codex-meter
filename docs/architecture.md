@@ -8,6 +8,7 @@ C++17 / Win32 / GDI. No embedded browser or interpreter.
 - src/worker.hpp: separate FIFO lanes for login and normal queries (at most two helpers); typed cancellation and fresh post-login sessions; results delivered through a mutex-protected event queue.
 - src/ui_geometry.hpp and ring_renderer.hpp: shared hit tests, edge/scroll geometry and tested GDI ring rendering.
 - src/main.cpp: compact/detail renderer, native buttons, tray, profile actions, DPI/position persistence and refresh scheduling.
+- src/usage.hpp and usage_cache.hpp: validated daily token buckets, bounded per-profile atomic cache with account identity binding; no chat log ingestion.
 - third_party/nlohmann: pinned MIT JSON library, no network build dependency.
 - tests: model tests, fake app-server, Windows IPC/storage tests.
 
@@ -19,7 +20,7 @@ Managed profiles get independent CODEX_HOME directories and keyring storage. The
 
 Quota responses use rateLimitsByLimitId when populated, otherwise the legacy rateLimits view. Primary/secondary windows remain distinct even if reset timestamps match. Weekly means exactly 10080 minutes. Missing credits differ from zero credits. availableCount is authoritative.
 
-A multi-account refresh is sequential polling. No claim is made that notifications from an unrelated Codex process automatically reach this app. Each query performs initialize/initialized, account/read, and account/rateLimits/read, then shuts down the helper. We do not start threads, turns, inference, reset redemption or workspace emails.
+A multi-account refresh is sequential polling. No claim is made that notifications from an unrelated Codex process automatically reach this app. Each query performs initialize/initialized, account/read, and account/rateLimits/read, then shuts down the helper. When details are visible, account/usage/read may run in the same helper, at most every five minutes except explicit refreshes. Unsupported daily usage is optional and does not discard quota data. Daily date labels are kept as returned by the service, with a seven-local-calendar-date display; no undocumented timezone or cross-product coverage is inferred. We do not start threads, turns, inference, reset redemption or workspace emails.
 
 Official protocol reference: https://learn.chatgpt.com/docs/app-server . The monitor does not assume that the full app-server has a documented quota-only low-memory startup mode. The 2026-11-01 local resource sample showed an approximately 1 GiB official helper peak; this remains a known dependency cost despite the main UI's approximately 18 MiB working set. Resource sampling includes descendants and checks process creation dates to avoid recycled-parent-PID attribution.
 

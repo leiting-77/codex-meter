@@ -1,6 +1,7 @@
 #pragma once
 #include "platform.hpp"
 #include "version.h"
+#include "usage.hpp"
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -190,8 +191,9 @@ public:
 struct QueryResult {
     std::string name,plan,avatar,displayName;
     Snapshot snapshot;
+    std::optional<TokenUsage> usage;
 };
-inline QueryResult query(RpcSession& rpc,bool refreshToken=false) {
+inline QueryResult query(RpcSession& rpc,bool refreshToken=false,bool includeUsage=false) {
     auto response=rpc.call("account/read",{{"refreshToken",refreshToken}});
     const auto& account=field(response,"account");
     if(account.is_null())throw RpcFailure(u8"尚未登录；右键账号可登录");
@@ -200,6 +202,11 @@ inline QueryResult query(RpcSession& rpc,bool refreshToken=false) {
     result.name=accountName(account);result.plan=str(account,"planType","ChatGPT");result.avatar=accountAvatar(account);
     result.displayName=accountDisplayName(account);
     result.snapshot=parseLimits(rpc.call("account/rateLimits/read"));
+    if(includeUsage) {
+        try {result.usage=parseUsage(rpc.call("account/usage/read",Json::object(),10));}
+        catch(const RpcCancelled&){throw;}
+        catch(const RpcFailure& e){TokenUsage usage;usage.message=e.what();result.usage=std::move(usage);}
+    }
     return result;
 }
 }

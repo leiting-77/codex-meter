@@ -1,4 +1,5 @@
 #include "../src/worker.hpp"
+#include "../src/usage_cache.hpp"
 #include <iostream>
 #include <tlhelp32.h>
 using namespace meter;
@@ -21,6 +22,13 @@ int main(int argc,char** argv) {
             CHECK(q.snapshot.windows[1].remaining==60);
             CHECK(q.snapshot.creditCount==2);
             CHECK(!q.snapshot.creditDetailsKnown);
+        }
+        for(const auto* id:{"alice","usageold"}) {
+            RpcSession r(exe,{id,"","",false},root,stop);r.initialize();auto q=query(r,false,true);
+            CHECK(q.snapshot.windows[0].remaining==75);
+            CHECK(q.usage.has_value());
+            if(std::string(id)=="alice")CHECK(q.usage->available&&q.usage->days.at("2026-11-02")==12345);
+            else CHECK(!q.usage->available&&!q.usage->message.empty());
         }
         for(const auto* id:{"bad","crash","signedout","error"}) {
             bool caught=false;
@@ -49,6 +57,26 @@ int main(int argc,char** argv) {
         Settings s;s.interval=300;s.docked=true;s.dockSide=2;
         s.profiles={{"alice",u8"用户甲","plus",false},{"bob",u8"用户乙","pro",false}};
         s.profiles[0].displayName="Sample User";s.profiles[0].alias=u8"我的昵称";
+        {
+            TokenUsage usage;usage.available=true;
+            for(int day=1;day<=31;++day)usage.days["2026-10-"+std::string(day<10?"0":"")+std::to_string(day)]=day;
+            auto account=s.profiles[0];
+            saveUsageCache(root,account,usage,1793577600);
+            auto cached=loadUsageCache(root,account);
+            CHECK(cached&&cached->usage.days.size()==30&&cached->updated==1793577600);
+            CHECK(cached->usage.days.count("2026-10-01")==0);
+            CHECK(cached->usage.days.at("2026-10-31")==31);
+            CHECK(!loadUsageCache(root,s.profiles[1]));
+            account.name="another-account";CHECK(!loadUsageCache(root,account));
+            CHECK(loadUsageCache(root,s.profiles[0]).has_value());
+            removeUsageCache(root,s.profiles[1].id);CHECK(loadUsageCache(root,s.profiles[0]).has_value());
+            removeUsageCache(root,s.profiles[0].id);CHECK(!loadUsageCache(root,s.profiles[0]));
+            bool invalid=false;try{usageCachePath(root,"../alice");}catch(...){invalid=true;}CHECK(invalid);
+            auto path=usageCachePath(root,s.profiles[0].id);fs::create_directories(path.parent_path());
+            {std::ofstream file(path);file<<"{broken";}
+            CHECK(!loadUsageCache(root,s.profiles[0]));
+            removeUsageCache(root,s.profiles[0].id);
+        }
         saveSettings(root,s);auto loaded=loadSettings(root);
         CHECK(loaded.profiles.size()==2);
         CHECK(loaded.profiles[0].name==u8"用户甲");
@@ -127,8 +155,10 @@ int main(int argc,char** argv) {
             SetEnvironmentVariableW(L"OPENAI_API_KEY",priorKey.empty()?nullptr:priorKey.c_str());
             auto found=findCodex(Settings{});CHECK(!found.empty());
             Profile local{"local","","",true};RpcSession r(found,local,root,stop);r.initialize();
-            auto q=query(r);
+            auto q=query(r,false,true);
             std::cout<<"Real account connected; windows="<<q.snapshot.windows.size()<<"; credits field="<<q.snapshot.creditCount.has_value()<<"\n";
+            std::cout<<"Daily usage available="<<(q.usage&&q.usage->available)<<"; returned days="<<(q.usage?q.usage->days.size():0)<<"\n";
+            if(q.usage&&!q.usage->available)std::cout<<"Usage status: "<<q.usage->message<<"\n";
         }
     }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}
 }

@@ -1,4 +1,5 @@
 #include "../src/model.hpp"
+#include "../src/usage.hpp"
 #include "../src/ui_geometry.hpp"
 #include <iostream>
 #include <stdexcept>
@@ -6,6 +7,18 @@
 int main() {
     using namespace meter;
     int checks=0;
+    CHECK(validUsageDate("2024-02-29"));
+    CHECK(!validUsageDate("2025-02-29"));
+    CHECK(!validUsageDate("2026-11-31"));
+    CHECK(!validUsageDate("2026-1x-02"));
+    CHECK(!parseUsage(Json::object()).available);
+    CHECK(!parseUsage(Json{{"dailyUsageBuckets",nullptr}}).available);
+    auto daily=parseUsage(Json{{"dailyUsageBuckets",Json::array({{{"startDate","2026-11-02"},{"tokens",0}}})}});
+    CHECK(daily.available&&daily.days.at("2026-11-02")==0);
+    CHECK(daily.days.count("2026-11-01")==0);
+    CHECK(!parseUsage(Json{{"dailyUsageBuckets",Json::array({{{"startDate","2026-11-02"},{"tokens",-1}}})}}).available);
+    CHECK(!parseUsage(Json{{"dailyUsageBuckets",Json::array({{{"startDate","2026-11-02"},{"tokens",2.5}}})}}).available);
+    CHECK(!parseUsage(Json{{"dailyUsageBuckets",Json::array({{{"startDate","2026-11-02"},{"tokens",1}},{{"startDate","2026-11-02"},{"tokens",2}}})}}).available);
     CHECK(quotaSweep(0)==0);
     CHECK(quotaSweep(25)==90);
     CHECK(quotaSweep(50)==180);

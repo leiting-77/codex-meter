@@ -44,6 +44,9 @@ int main(int argc,char** argv) {
             // Test JSONL assembled across arbitrary pipe chunks.
             std::cout<<payload.substr(0,payload.size()/2)<<std::flush;
             Sleep(10);std::cout<<payload.substr(payload.size()/2)<<"\n"<<std::flush;
+        }else if(method=="account/usage/read"){
+            if(scenario=="usageold")std::cout<<Json({{"id",id},{"error",{{"code",-32601},{"message","method not found"}}}}).dump()<<std::endl;
+            else std::cout<<Json({{"id",id},{"result",{{"dailyUsageBuckets",Json::array({{{"startDate","2026-11-02"},{"tokens",12345}}})}}}}).dump()<<std::endl;
         }else if(method=="account/logout"){
             std::cout<<Json({{"id",id},{"result",Json::object()}}).dump()<<std::endl;
         }

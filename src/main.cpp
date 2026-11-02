@@ -2,6 +2,7 @@
 #include "resource.h"
 #include "ui_geometry.hpp"
 #include "ring_renderer.hpp"
+#include "usage_cache.hpp"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <commctrl.h>
@@ -14,6 +15,7 @@
 #include <cwctype>
 #include <iomanip>
 #include <sstream>
+#include <array>
 using namespace meter;
 namespace {
 constexpr UINT WM_RESULTS=WM_APP+1,WM_TRAY=WM_APP+2,WM_DOCK=WM_APP+3;
@@ -29,6 +31,9 @@ enum Command { Expand=101,Refresh,Add,LinkLocal,ChooseExe,Cancel,Hide,Quit,Topmo
 struct View {
     Profile profile;
     Snapshot snapshot;
+    TokenUsage usage;
+    time_t usageChecked=0;
+    int64_t usageUpdated=0;
     std::string status;
     bool busy=false,failed=false,paused=false;
     int failures=0;
@@ -162,7 +167,7 @@ void ring(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,boo
 int cardHeight(const View& v) {
     int rows=std::max(1,static_cast<int>(v.snapshot.windows.size()));
     int credits=std::max(1,static_cast<int>(v.snapshot.credits.size()));
-    return 62+rows*55+28+credits*22+(incompleteCredits(v.snapshot)?22:0)+(v.failed?42:0)+14;
+    return 62+rows*55+28+credits*22+(incompleteCredits(v.snapshot)?22:0)+(v.failed?42:0)+14+188;
 }
 int contentHeight(){
     if(views.empty())return 100;
@@ -286,14 +291,17 @@ void dock(int side,const RECT& rect){
     SetWindowPos(window,nullptr,rect.left,rect.top,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
     layout();persist();
 }
-void toggle(){if(settings.docked)undock();expanded=!expanded;scrollY=0;layout();}
+void refreshAll();
+void toggle(){if(settings.docked)undock();expanded=!expanded;scrollY=0;layout();if(expanded&&!demo)refreshAll();}
 void queue(View& v,Action action=Action::Refresh){
     if(demo||v.busy||!worker)return;
+    if(action==Action::Login){v.usage={};v.usageChecked=0;v.usageUpdated=0;removeUsageCache(dataDir,v.profile.id);}
     v.busy=true;v.paused=false;v.status=action==Action::Login?u8"准备登录…":u8"等待同步…";
-    worker->enqueue({v.profile,action,findCodex(settings),dataDir});
+    worker->enqueue({v.profile,action,findCodex(settings),dataDir,
+        expanded&&!settings.docked&&IsWindowVisible(window)&&std::time(nullptr)-v.usageChecked>=300});
     InvalidateRect(window,nullptr,FALSE);
 }
-void refreshAll(){for(auto& v:views)queue(v);}
+void refreshAll(){for(auto& v:views){v.usageChecked=0;queue(v);}}
 void preferences();
 void addAccount(){
     if(demo){MessageBoxW(window,L"当前为演示模式。退出后正常启动，即可添加真实账号。",L"Codex Meter",MB_OK);return;}
@@ -355,6 +363,45 @@ void removeGlyph(HDC dc,int x,int y,bool hover) {
     graphics.DrawLine(&pen,static_cast<float>(px(x+16)),static_cast<float>(px(y+8)),
         static_cast<float>(px(x+8)),static_cast<float>(px(y+16)));
 }
+std::array<std::string,7> usageDates() {
+    std::array<std::string,7> dates;
+    auto now=std::time(nullptr);std::tm today{};localtime_s(&today,&now);
+    for(int i=0;i<7;++i) {
+        auto day=today;day.tm_hour=12;day.tm_min=day.tm_sec=0;day.tm_mday-=6-i;day.tm_isdst=-1;
+        auto stamp=std::mktime(&day);std::tm normalized{};localtime_s(&normalized,&stamp);
+        char date[16]{};std::strftime(date,sizeof(date),"%Y-%m-%d",&normalized);dates[i]=date;
+    }
+    return dates;
+}
+std::wstring tokenAmount(long double value) {
+    const wchar_t* unit=L"";
+    if(value>=1e9L){value/=1e9L;unit=L"B";}else if(value>=1e6L){value/=1e6L;unit=L"M";}
+    else if(value>=1e3L){value/=1e3L;unit=L"K";}
+    std::wostringstream out;out<<std::fixed<<std::setprecision(*unit?1:0)<<value<<unit;return out.str();
+}
+int usageChartTop(const View& v,int top){return top+cardHeight(v)-194;}
+void usageChart(HDC dc,const View& v,int top,int width) {
+    const int left=22,area=width-44,step=area/7,baseline=top+126;
+    box(dc,left-4,top,area+8,174,RGB(237,230,246),16);
+    text(dc,L"近七天 Token 用量",left+8,top+8,180,22,INK,12,FW_MEDIUM);
+    auto dates=usageDates();long double total=0,peak=1;int known=0;
+    for(const auto& date:dates) {auto it=v.usage.days.find(date);if(it!=v.usage.days.end()){
+        total+=it->second;peak=std::max(peak,static_cast<long double>(it->second));++known;}}
+    const auto summary=known?(known==7?L"合计 ":L"已知合计 ")+tokenAmount(total):L"暂无数据";
+    text(dc,summary,left+180,top+9,area-190,20,MUTED,10,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    for(int i=0;i<7;++i) {
+        int cx=left+step*i+step/2;auto it=v.usage.days.find(dates[i]);bool has=it!=v.usage.days.end();
+        const int height=has&&it->second>0?std::max(3,static_cast<int>(it->second/peak*70)):0;
+        box(dc,cx-10,baseline,20,2,RGB(217,206,232),2);
+        if(height)box(dc,cx-10,baseline-height,20,height,i==6?WARM:RGB(239,214,134),8);
+        text(dc,has?tokenAmount(static_cast<long double>(it->second)):L"—",cx-step/2,baseline-height-20,step,18,has?INK:MUTED,9,FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        text(dc,i==6?L"今天":wide(dates[i].substr(5)),cx-step/2,baseline+5,step,18,i==6?INK:MUTED,10,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+    std::wstring note=demo?L"演示数据 · 悬停竖条查看明细":!v.usage.message.empty()?wide(v.usage.message):
+        v.usageUpdated?L"更新 "+date(v.usageUpdated)+L" · 按服务日期展示":
+        !v.usageChecked?L"正在等待每日用量；可按 F5 刷新":L"服务未提供这七天的用量";
+    text(dc,note,left+8,top+153,area-16,16,MUTED,9);
+}
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
     box(dc,10,y,w-20,height,CARD,20);
@@ -399,6 +446,7 @@ void detail(HDC dc,const View& v,int y,int w,int index) {
     }
     if(incompleteCredits(v.snapshot)){text(dc,L"服务仅返回部分卡片明细",22,row,w-44,20,MUTED,11);row+=22;}
     if(v.failed)text(dc,wide(v.status)+(v.synced?L"（保留上次数据）":L""),22,row+3,w-44,38,LOW,11,FW_NORMAL,DT_LEFT|DT_WORDBREAK);
+    usageChart(dc,v,usageChartTop(v,y),w);
 }
 void dockedPaint(HDC dc,int width,int height) {
     const bool horizontal=settings.dockSide==3||settings.dockSide==4;
@@ -639,12 +687,12 @@ void command(int cmd){
         int i=cmd-ProfileRemove;if(demo||views[i].busy)return;
         if(MessageBoxW(window,L"移除此监测账号？独立账号将退出其 Codex 登录；本机 Codex 登录不受影响。",
              L"移除账号",MB_OKCANCEL|MB_ICONQUESTION)!=IDOK)return;
-        if(views[i].profile.local){views.erase(views.begin()+i);persist();layout();}
+        if(views[i].profile.local){removeUsageCache(dataDir,views[i].profile.id);views.erase(views.begin()+i);persist();layout();}
         else queue(views[i],Action::Remove);
         return;
     }
     if(cmd>=ProfileLogin&&cmd<ProfileLogin+static_cast<int>(views.size())){queue(views[cmd-ProfileLogin],Action::Login);return;}
-    if(cmd>=ProfileRefresh&&cmd<ProfileRefresh+static_cast<int>(views.size())){queue(views[cmd-ProfileRefresh]);return;}
+    if(cmd>=ProfileRefresh&&cmd<ProfileRefresh+static_cast<int>(views.size())){auto& v=views[cmd-ProfileRefresh];v.usageChecked=0;queue(v);return;}
     if(cmd==DockToggle) {
         if(settings.docked) {
             undock();
@@ -659,7 +707,7 @@ void command(int cmd){
     case Expand:toggle();break;
     case WindowClose:if(settings.closeToTray)ShowWindow(window,SW_HIDE);else SendMessageW(window,WM_CLOSE,0,0);break;
     case WindowCollapse:if(expanded){expanded=false;scrollY=0;layout();}break;
-    case WindowExpand:if(!expanded){expanded=true;scrollY=0;layout();}break;
+    case WindowExpand:if(!expanded){expanded=true;scrollY=0;layout();if(!demo)refreshAll();}break;
     case Refresh:refreshAll();break;
     case Add:addAccount();break;
     case LinkLocal:linkLocal();break;
@@ -690,13 +738,23 @@ void results(){
     for(auto& e:worker->take()) {
         auto it=std::find_if(views.begin(),views.end(),[&](const View& v){return v.profile.id==e.id;});
         if(it==views.end())continue;
-        if(e.removed){views.erase(it);persist();continue;}
+        if(e.removed){removeUsageCache(dataDir,it->profile.id);views.erase(it);persist();continue;}
         it->status=e.status;
         if(e.data){
+            if(it->profile.name!=e.data->name){it->usage={};it->usageChecked=0;it->usageUpdated=0;removeUsageCache(dataDir,it->profile.id);}
             const bool metadataChanged=it->profile.name!=e.data->name||it->profile.plan!=e.data->plan||it->profile.displayName!=e.data->displayName;
             it->profile.name=e.data->name;it->profile.plan=e.data->plan;it->profile.avatar=e.data->avatar;
             it->profile.displayName=e.data->displayName;
             it->snapshot=std::move(e.data->snapshot);
+            if(e.data->usage){
+                it->usageChecked=std::time(nullptr);
+                if(e.data->usage->available){
+                    it->usage=std::move(*e.data->usage);it->usageUpdated=it->usageChecked;
+                    try{saveUsageCache(dataDir,it->profile,it->usage,it->usageUpdated);}
+                    catch(...){it->usage.message=u8"用量已更新；本地缓存未能保存";}
+                }
+                else it->usage.message=it->usage.available?u8"用量更新失败，保留上次数据":e.data->usage->message;
+            }
             it->synced=std::time(nullptr);it->failed=false;it->failures=0;if(metadataChanged)persist();
         }
         if(e.finished){
@@ -800,6 +858,17 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
                     for(const auto& q:v.snapshot.windows)tooltipText+=L"\n"+duration(q)+L"："+percent(q.remaining)+L" · "+reset(q);
                     if(!v.status.empty())tooltipText+=L"\n"+wide(v.status);
                     if(settings.docked)tooltipText+=L"\n内圈米黄：短周期；外圈淡紫：周额度\n点击展开，滚轮切换账号";
+                    if(expanded&&!settings.docked) {
+                        int cardTop=HEADER+4-scrollY;for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+10;
+                        int chart=usageChartTop(v,cardTop),x=logical(p.x),y=logical(p.y);
+                        RECT client{};GetClientRect(hwnd,&client);int step=(logical(client.right)-48)/7;
+                        if(y>=chart+32&&y<chart+150&&x>=22&&x<22+step*7) {
+                            int day=(x-22)/step;auto dates=usageDates();auto found=v.usage.days.find(dates[day]);
+                            tooltipText=compactName(v.profile)+L"\n"+wide(dates[day])+L"（服务日期）\n"+
+                                (found==v.usage.days.end()?L"无数据":std::to_wstring(found->second)+L" Tokens");
+                            if(demo)tooltipText+=L"\n演示数据";
+                        }
+                    }
                 } else tooltipText=L"拖动顶栏移动；右键打开设置";
             }
             tip->lpszText=tooltipText.data();return 0;
@@ -808,6 +877,8 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     }
     case WM_TIMER:{
         auto now=Clock::now();
+        static std::string lastUsageDay;auto today=usageDates().back();
+        if(today!=lastUsageDay){lastUsageDay=today;for(auto& v:views)v.usageChecked=0;}
         if(!demo)for(auto& v:views)if(!v.paused&&!v.busy&&now>=v.next)queue(v);
         static time_t minute=0;auto m=std::time(nullptr)/60;
         if(m!=minute){minute=m;if(IsWindowVisible(hwnd))InvalidateRect(hwnd,nullptr,FALSE);}
@@ -939,6 +1010,9 @@ void demoData(){
             {{"id","demo-1"},{"status","available"},{"expiresAt",std::time(nullptr)+86400*4}},
             {{"id","demo-2"},{"status","available"},{"expiresAt",std::time(nullptr)+86400*10}}};
         v.snapshot=parseLimits(r);v.synced=std::time(nullptr);views.push_back(std::move(v));
+        auto& sample=views.back();sample.usage.available=true;sample.usageChecked=std::time(nullptr);
+        const int64_t tokens[2][7]={{142000,386000,214000,628000,492000,310000,458000},{58000,174000,92000,265000,0,138000,186000}};
+        auto dates=usageDates();for(int day=0;day<7;++day)sample.usage.days[dates[day]]=tokens[i][day];
     }
 }
 }
@@ -978,7 +1052,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
             try{settings=loadSettings(dataDir);}catch(...){
                 MessageBoxW(nullptr,L"配置文件无法读取。为避免覆盖原配置，应用未启动。\n请备份并检查数据目录中的 settings.json。",L"Codex Meter",MB_ICONERROR);return 1;
             }
-            for(auto& p:settings.profiles){View v;v.profile=p;views.push_back(std::move(v));}
+            for(auto& p:settings.profiles){View v;v.profile=p;
+                if(auto cached=loadUsageCache(dataDir,p)){v.usage=std::move(cached->usage);v.usageUpdated=cached->updated;}
+                views.push_back(std::move(v));}
         }else demoData();
         expanded=initialExpanded||settings.startExpanded;
         if(windowed)settings.taskbar=true;

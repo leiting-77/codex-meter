@@ -60,6 +60,8 @@ int wmain(int argc,wchar_t** argv) {
         exportDemo(output/L"details.png",true,0);
         exportDemo(output/L"edge-dock.png",false,3);
         exportDemo(output/L"edge-dock-vertical.png",false,2);
+        views.resize(1);
+        exportDemo(output/L"account-preview.png",true,0);
         DestroyWindow(window);clearFonts();Gdiplus::GdiplusShutdown(graphicsToken);CoUninitialize();
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}

@@ -5,7 +5,7 @@
 #include <queue>
 namespace meter {
 enum class Action { Refresh, Login, Remove };
-struct Task { Profile profile; Action action=Action::Refresh; std::wstring exe; fs::path data; };
+struct Task { Profile profile; Action action=Action::Refresh; std::wstring exe; fs::path data; bool includeUsage=false; };
 struct Event {
     std::string id,status;
     std::optional<QueryResult> data;
@@ -51,7 +51,7 @@ class Worker {
                         emit({task.profile.id,u8"登录成功，正在读取额度…"});
                         try {
                             RpcSession fresh(task.exe,task.profile,task.data,cancel);fresh.initialize();
-                            result.data=query(fresh,true);break;
+                            result.data=query(fresh,true,task.includeUsage);break;
                         } catch(const RpcCancelled&) {throw;}
                         catch(const RpcFailure&) {
                             if(attempt==2)throw;
@@ -63,7 +63,7 @@ class Worker {
                     if(task.action==Action::Remove) {
                         if(task.profile.local)throw RpcFailure(u8"本机账号只解除监测，不退出 Codex");
                         rpc.call("account/logout");result.removed=true;
-                    } else result.data=query(rpc);
+                    } else result.data=query(rpc,false,task.includeUsage);
                 }
             } catch(const RpcCancelled& e) {result.status=e.what();result.cancelled=true;}
             catch(const RpcFailure& e) {result.status=e.what();}
