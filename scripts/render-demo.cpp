@@ -57,11 +57,16 @@ int wmain(int argc,wchar_t** argv) {
         refreshButton=child(L"刷新");addButton=child(L"添加账号");
         fs::path output=fs::absolute(argv[1]);fs::create_directories(output);
         exportDemo(output/L"compact.png",false,0);
+        hotButton=WindowClose;
+        exportDemo(output/L"compact-controls.png",false,0);
+        hotButton=0;
         exportDemo(output/L"details.png",true,0);
         exportDemo(output/L"edge-dock.png",false,3);
         exportDemo(output/L"edge-dock-vertical.png",false,2);
         views.resize(1);
         exportDemo(output/L"account-preview.png",true,0);
+        clearFonts();scale=1;hotButton=WindowClose;
+        exportDemo(output/L"native-detail-preview.png",true,0);
         DestroyWindow(window);clearFonts();Gdiplus::GdiplusShutdown(graphicsToken);CoUninitialize();
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}

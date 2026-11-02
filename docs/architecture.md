@@ -10,6 +10,7 @@ C++17 / Win32 / GDI. No embedded browser or interpreter.
 - src/main.cpp: compact/detail renderer, native buttons, tray, profile actions, DPI/position persistence and refresh scheduling.
 - src/usage.hpp and usage_cache.hpp: validated daily token buckets, bounded per-profile atomic cache with account identity binding; no chat log ingestion.
 - src/surface_renderer.hpp: antialiased shape masks composited into the shared top-down premultiplied DIB surfaces, preserving fractional alpha at glass edges and respecting the content clip.
+- src/text_renderer.hpp: grayscale GDI glyph masks and antialiased traffic-control paths composited through the same alpha pipeline. Small text uses at least 10 logical pixels; no ClearType subpixel colors are copied onto translucent surfaces.
 - third_party/nlohmann: pinned MIT JSON library, no network build dependency.
 - tests: model tests, fake app-server, Windows IPC/storage tests.
 

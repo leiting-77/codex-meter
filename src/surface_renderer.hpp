@@ -12,8 +12,8 @@ inline uint32_t resolveSurfacePixel(uint32_t pixel,COLORREF background,bool glas
     const unsigned alpha=glass&&rgb==bg?110:255;
     return (alpha<<24)|((((rgb>>16)&255)*alpha/255)<<16)|((((rgb>>8)&255)*alpha/255)<<8)|((rgb&255)*alpha/255);
 }
-inline bool paintSurfaceShape(HDC dc,int x,int y,int width,int height,float diameter,COLORREF fill,
-                              COLORREF border,COLORREF background,bool glass,bool ellipse=false) {
+inline bool compositeSurfaceMask(HDC dc,int x,int y,int width,int height,const BYTE* sourceBits,int stride,
+                                 COLORREF background,bool glass,bool grayscale=false,COLORREF ink=0) {
     if(width<=0||height<=0)return true;
     DIBSECTION target{};
     if(GetObjectW(GetCurrentObject(dc,OBJ_BITMAP),sizeof(target),&target)!=sizeof(target)||
@@ -21,6 +21,32 @@ inline bool paintSurfaceShape(HDC dc,int x,int y,int width,int height,float diam
     // All application buffers are created top-down. GetObject normalizes biHeight
     // to a positive value, so its sign cannot be used to recover that orientation.
     GdiFlush();
+    POINT origin{};GetViewportOrgEx(dc,&origin);RECT clip{};GetClipBox(dc,&clip);
+    const int left=std::max<int>({0,clip.left+origin.x,x+origin.x}),top=std::max<int>({0,clip.top+origin.y,y+origin.y});
+    const int right=std::min<int>({target.dsBm.bmWidth,clip.right+origin.x,x+origin.x+width});
+    const int bottom=std::min<int>({target.dsBm.bmHeight,clip.bottom+origin.y,y+origin.y+height});
+    for(int row=top;row<bottom;++row) {
+        auto dest=reinterpret_cast<uint32_t*>(static_cast<BYTE*>(target.dsBm.bmBits)+row*target.dsBm.bmWidthBytes);
+        auto src=reinterpret_cast<const uint32_t*>(sourceBits+(row-y-origin.y)*stride);
+        for(int col=left;col<right;++col) {
+            uint32_t source=src[col-x-origin.x];
+            if(grayscale) {
+                const unsigned coverage=source&255u;
+                source=(coverage<<24)|((GetRValue(ink)*coverage/255)<<16)|((GetGValue(ink)*coverage/255)<<8)|(GetBValue(ink)*coverage/255);
+            }
+            const unsigned alpha=source>>24;if(!alpha)continue;
+            if(alpha==255){dest[col]=source;continue;}
+            const uint32_t prior=resolveSurfacePixel(dest[col],background,glass);const unsigned inverse=255-alpha;
+            uint32_t out=0;for(unsigned shift:{0u,8u,16u,24u})
+                out|=(((source>>shift)&255u)+(((prior>>shift)&255u)*inverse+127)/255)<<shift;
+            dest[col]=out;
+        }
+    }
+    return true;
+}
+inline bool paintSurfaceShape(HDC dc,int x,int y,int width,int height,float diameter,COLORREF fill,
+                              COLORREF border,COLORREF background,bool glass,bool ellipse=false) {
+    if(width<=0||height<=0)return true;
     Gdiplus::Bitmap mask(width,height,PixelFormat32bppPARGB);
     {
         Gdiplus::Graphics graphics(&mask);graphics.Clear(Gdiplus::Color(0,0,0,0));
@@ -39,22 +65,7 @@ inline bool paintSurfaceShape(HDC dc,int x,int y,int width,int height,float diam
     }
     Gdiplus::BitmapData data{};Gdiplus::Rect rect(0,0,width,height);
     if(mask.LockBits(&rect,Gdiplus::ImageLockModeRead,PixelFormat32bppPARGB,&data)!=Gdiplus::Ok)return false;
-    POINT origin{};GetViewportOrgEx(dc,&origin);RECT clip{};GetClipBox(dc,&clip);
-    const int left=std::max<int>({0,clip.left+origin.x,x+origin.x}),top=std::max<int>({0,clip.top+origin.y,y+origin.y});
-    const int right=std::min<int>({target.dsBm.bmWidth,clip.right+origin.x,x+origin.x+width});
-    const int bottom=std::min<int>({target.dsBm.bmHeight,clip.bottom+origin.y,y+origin.y+height});
-    for(int row=top;row<bottom;++row) {
-        auto dest=reinterpret_cast<uint32_t*>(static_cast<BYTE*>(target.dsBm.bmBits)+row*target.dsBm.bmWidthBytes);
-        auto src=reinterpret_cast<const uint32_t*>(static_cast<const BYTE*>(data.Scan0)+(row-y-origin.y)*data.Stride);
-        for(int col=left;col<right;++col) {
-            const uint32_t source=src[col-x-origin.x];const unsigned alpha=source>>24;if(!alpha)continue;
-            if(alpha==255){dest[col]=source;continue;}
-            const uint32_t prior=resolveSurfacePixel(dest[col],background,glass);const unsigned inverse=255-alpha;
-            uint32_t out=0;for(unsigned shift:{0u,8u,16u,24u})
-                out|=(((source>>shift)&255u)+(((prior>>shift)&255u)*inverse+127)/255)<<shift;
-            dest[col]=out;
-        }
-    }
-    mask.UnlockBits(&data);return true;
+    bool result=compositeSurfaceMask(dc,x,y,width,height,static_cast<const BYTE*>(data.Scan0),data.Stride,background,glass);
+    mask.UnlockBits(&data);return result;
 }
 }

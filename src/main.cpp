@@ -4,6 +4,7 @@
 #include "ring_renderer.hpp"
 #include "usage_cache.hpp"
 #include "surface_renderer.hpp"
+#include "text_renderer.hpp"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <commctrl.h>
@@ -24,7 +25,7 @@ constexpr int HEADER=34,FOOTER=42;
 constexpr int DETAIL_WIDTH=380,DETAIL_GAP=8,USAGE_HEIGHT=116,USAGE_SPACE=130;
 constexpr COLORREF BG=RGB(243,248,248),SURFACE=RGB(248,240,226),CARD=RGB(218,204,239),
     BUTTON=RGB(220,207,232),TRACK=RGB(232,231,239),INK=RGB(24,23,68),
-    MUTED=RGB(106,99,128),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
+    MUTED=RGB(88,81,111),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
     LOW=RGB(232,96,88),OK=RGB(69,182,77),OLD=RGB(151,145,171),WARM=RGB(242,201,76),
     TRAFFIC_RED=RGB(238,99,88),TRAFFIC_YELLOW=RGB(237,184,63),TRAFFIC_GREEN=RGB(57,181,74);
 enum Command { Expand=101,Refresh,Add,LinkLocal,ChooseExe,Cancel,Hide,Quit,Topmost,About,
@@ -68,14 +69,16 @@ std::map<std::pair<int,int>,HFONT> fonts;
 int px(int v){return static_cast<int>(std::lround(v*scale));}
 int logical(int v){return static_cast<int>(std::lround(v/scale));}
 HFONT font(int size,int weight=FW_NORMAL) {
+    size=std::max(10,size);
     auto key=std::make_pair(size,weight);auto it=fonts.find(key);if(it!=fonts.end())return it->second;
     auto f=CreateFontW(-px(size),0,0,0,weight,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
+        CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
     fonts.emplace(key,f);return f;
 }
 void clearFonts(){for(auto& x:fonts)DeleteObject(x.second);fonts.clear();}
 void text(HDC dc,const std::wstring& s,int x,int y,int w,int h,COLORREF color=INK,int size=12,
           int weight=FW_NORMAL,UINT flags=DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS) {
+    if(paintSurfaceText(dc,s,px(x),px(y),px(w),px(h),font(size,weight),color,flags,BG,glassActive))return;
     auto old=SelectObject(dc,font(size,weight));SetTextColor(dc,color);SetBkMode(dc,TRANSPARENT);
     RECT r{px(x),px(y),px(x+w),px(y+h)};DrawTextW(dc,s.c_str(),static_cast<int>(s.size()),&r,flags|DT_NOPREFIX);
     SelectObject(dc,old);
@@ -128,7 +131,7 @@ void avatar(HDC dc,int cx,int cy,int radius,const std::wstring& label) {
     auto ob=SelectObject(dc,brush),op=SelectObject(dc,pen);
     Ellipse(dc,px(cx-radius),px(cy-radius),px(cx+radius),px(cy+radius));
     SelectObject(dc,ob);SelectObject(dc,op);DeleteObject(brush);DeleteObject(pen);
-    text(dc,label,cx-radius,cy-radius/2,radius*2,radius, SURFACE, radius<=10?8:10,FW_BOLD,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    text(dc,label,cx-radius,cy-radius,radius*2,radius*2,SURFACE,10,FW_BOLD,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 }
 std::wstring duration(const Window& w) {
     if(w.weekly())return L"周额度";
@@ -401,7 +404,7 @@ void usageChart(HDC dc,const View& v,int top,int width) {
     std::wstring note=demo?L"演示数据 · 悬停竖条查看明细":!v.usage.message.empty()?wide(v.usage.message):
         v.usageUpdated?L"更新 "+date(v.usageUpdated)+L" · 按服务日期展示":
         !v.usageChecked?L"正在等待每日用量；可按 F5 刷新":L"服务未提供这七天的用量";
-    text(dc,note,left+8,top+103,area-16,11,MUTED,9);
+    text(dc,note,left+8,top+101,area-16,14,MUTED,10);
 }
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
@@ -790,11 +793,15 @@ public:
 };
 LRESULT CALLBACK buttonProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp,UINT_PTR,DWORD_PTR) {
     const int id=GetDlgCtrlID(hwnd);
+    auto invalidate=[&]{
+        if(id>=WindowClose&&id<=WindowExpand)for(HWND control:{closeButton,collapseButton,expandButton})InvalidateRect(control,nullptr,FALSE);
+        else InvalidateRect(hwnd,nullptr,FALSE);
+    };
     if(msg==WM_MOUSEMOVE) {
-        if(hotButton!=id){hotButton=id;InvalidateRect(hwnd,nullptr,FALSE);}
+        if(hotButton!=id){hotButton=id;invalidate();}
         TRACKMOUSEEVENT tracking{sizeof(tracking),TME_LEAVE,hwnd,0};TrackMouseEvent(&tracking);
     } else if(msg==WM_MOUSELEAVE) {
-        if(hotButton==id)hotButton=0;InvalidateRect(hwnd,nullptr,FALSE);
+        if(hotButton==id)hotButton=0;invalidate();
     } else if(msg==WM_ERASEBKGND)return 1;
     return DefSubclassProc(hwnd,msg,wp,lp);
 }
@@ -833,21 +840,12 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
         int w=logical(d->rcItem.right-d->rcItem.left),h=logical(d->rcItem.bottom-d->rcItem.top);
         if(d->CtlID==WindowClose||d->CtlID==WindowCollapse||d->CtlID==WindowExpand) {
             COLORREF color=d->CtlID==WindowClose?TRAFFIC_RED:d->CtlID==WindowCollapse?TRAFFIC_YELLOW:TRAFFIC_GREEN;
-            paintSurfaceShape(d->hDC,px(1),px(1),px(16),px(16),0,color,CLR_INVALID,BG,glassActive,true);
-            if(d->itemState&ODS_SELECTED) {
-                auto shade=CreatePen(PS_SOLID,1,INK);
-                auto old=SelectObject(d->hDC,shade);SetBkMode(d->hDC,TRANSPARENT);
-                if(d->CtlID==WindowClose) {
-                    MoveToEx(d->hDC,px(6),px(6),nullptr);LineTo(d->hDC,px(12),px(12));
-                    MoveToEx(d->hDC,px(12),px(6),nullptr);LineTo(d->hDC,px(6),px(12));
-                } else if(d->CtlID==WindowCollapse) {
-                    MoveToEx(d->hDC,px(5),px(9),nullptr);LineTo(d->hDC,px(13),px(9));
-                } else {
-                    MoveToEx(d->hDC,px(5),px(9),nullptr);LineTo(d->hDC,px(13),px(9));
-                    MoveToEx(d->hDC,px(9),px(5),nullptr);LineTo(d->hDC,px(9),px(13));
-                }
-                SelectObject(d->hDC,old);DeleteObject(shade);
-            }
+            const int inset=px(1),diameter=px(w)-2*inset;
+            paintSurfaceShape(d->hDC,inset,inset,diameter,diameter,0,color,CLR_INVALID,BG,glassActive,true);
+            if((hotButton>=WindowClose&&hotButton<=WindowExpand)||(d->itemState&ODS_SELECTED)||
+                ((d->itemState&ODS_FOCUS)&&!(d->itemState&ODS_NOFOCUSRECT)))
+                paintTrafficGlyph(d->hDC,px(w),px(h),d->CtlID==WindowClose?TrafficGlyph::Close:
+                    d->CtlID==WindowCollapse?TrafficGlyph::Minimize:TrafficGlyph::Expand,scale,INK,BG,glassActive);
             return TRUE;
         }
         const auto fill=(d->itemState&ODS_SELECTED)?RGB(201,185,222):hotButton==static_cast<int>(d->CtlID)?RGB(212,197,230):BUTTON;
