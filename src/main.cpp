@@ -22,7 +22,7 @@ using namespace meter;
 namespace {
 constexpr UINT WM_RESULTS=WM_APP+1,WM_TRAY=WM_APP+2,WM_DOCK=WM_APP+3;
 constexpr int HEADER=34,FOOTER=42;
-constexpr int DETAIL_WIDTH=380,DETAIL_GAP=8,USAGE_HEIGHT=116,USAGE_SPACE=130;
+constexpr int DETAIL_WIDTH=380,DETAIL_GAP=8,USAGE_HEIGHT=116,USAGE_SPACE=116;
 constexpr COLORREF BG=RGB(243,248,248),SURFACE=RGB(248,240,226),CARD=RGB(218,204,239),
     BUTTON=RGB(220,207,232),TRACK=RGB(232,231,239),INK=RGB(24,23,68),
     MUTED=RGB(88,81,111),LINE=RGB(250,246,235),ACCENT=RGB(129,113,224),
@@ -166,7 +166,7 @@ void progress(HDC dc,int x,int y,int w,int h,const std::optional<double>& value,
 }
 void ringColor(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,bool old,COLORREF preferred) {
     auto color=old?(preferred==WARM?RGB(189,178,138):RGB(154,146,183)):preferred;
-    drawQuotaRing(dc,px(cx),px(cy),px(radius),px(5),value,TRACK,color);
+    drawQuotaRing(dc,px(cx),px(cy),px(radius),px(4),value,TRACK,color);
 }
 void ring(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,bool old) {
     ringColor(dc,cx,cy,radius,value,old,WARM);
@@ -377,6 +377,13 @@ std::array<std::string,7> usageDates() {
     }
     return dates;
 }
+std::wstring usageDayLabel(int index) {
+    if(index==6)return L"今天";
+    auto now=std::time(nullptr);std::tm today{};localtime_s(&today,&now);
+    static const wchar_t* names[]={L"周日",L"周一",L"周二",L"周三",L"周四",L"周五",L"周六"};
+    const int weekday=(today.tm_wday-(6-index)+14)%7;
+    return names[weekday];
+}
 std::wstring tokenAmount(long double value) {
     const wchar_t* unit=L"";
     if(value>=1e9L){value/=1e9L;unit=L"B";}else if(value>=1e6L){value/=1e6L;unit=L"M";}
@@ -388,23 +395,39 @@ void usageChart(HDC dc,const View& v,int top,int width) {
     const int left=22,area=width-44,step=area/7,baseline=top+82;
     box(dc,left-4,top,area+8,USAGE_HEIGHT,RGB(237,230,246),14);
     text(dc,L"近七天 Token 用量",left+8,top+5,150,18,INK,11,FW_MEDIUM);
-    auto dates=usageDates();long double total=0,peak=1;int known=0;
+    auto dates=usageDates();long double total=0,peak=1;int knownCount=0;
     for(const auto& date:dates) {auto it=v.usage.days.find(date);if(it!=v.usage.days.end()){
-        total+=it->second;peak=std::max(peak,static_cast<long double>(it->second));++known;}}
-    const auto summary=known?(known==7?L"合计 ":L"已知合计 ")+tokenAmount(total):L"暂无数据";
+        total+=it->second;peak=std::max(peak,static_cast<long double>(it->second));++knownCount;}}
+    const auto summary=knownCount?(knownCount==7?L"合计 ":L"已知合计 ")+tokenAmount(total):L"暂无数据";
     text(dc,summary,left+150,top+5,area-160,18,MUTED,9,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    std::array<Gdiplus::PointF,7> points{};std::array<bool,7> hasData{};
     for(int i=0;i<7;++i) {
-        int cx=left+step*i+step/2;auto it=v.usage.days.find(dates[i]);bool has=it!=v.usage.days.end();
-        const int height=has&&it->second>0?std::max(2,static_cast<int>(it->second/peak*40)):0;
-        box(dc,cx-7,baseline,14,2,RGB(217,206,232),2);
-        if(height)box(dc,cx-7,baseline-height,14,height,i==6?WARM:RGB(239,214,134),7);
-        text(dc,has?tokenAmount(static_cast<long double>(it->second)):L"—",cx-step/2,baseline-height-16,step,14,has?INK:MUTED,9,FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
-        text(dc,i==6?L"今天":wide(dates[i].substr(5)),cx-step/2,baseline+4,step,16,i==6?INK:MUTED,9,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        int cx=left+step*i+step/2;auto it=v.usage.days.find(dates[i]);
+        hasData[i]=it!=v.usage.days.end();
+        const int height=hasData[i]&&it->second>0?std::max(3,static_cast<int>(it->second/peak*42)):0;
+        points[i]=Gdiplus::PointF(static_cast<float>(px(cx)),static_cast<float>(px(baseline-height)));
     }
-    std::wstring note=demo?L"演示数据 · 悬停竖条查看明细":!v.usage.message.empty()?wide(v.usage.message):
-        v.usageUpdated?L"更新 "+date(v.usageUpdated)+L" · 按服务日期展示":
-        !v.usageChecked?L"正在等待每日用量；可按 F5 刷新":L"服务未提供这七天的用量";
-    text(dc,note,left+8,top+101,area-16,14,MUTED,10);
+    {
+        Gdiplus::Graphics graphics(dc);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        Gdiplus::Pen track(Gdiplus::Color(95,217,206,232),static_cast<float>(px(1)));
+        graphics.DrawLine(&track,static_cast<float>(px(left+5)),static_cast<float>(px(baseline)),
+            static_cast<float>(px(left+area-5)),static_cast<float>(px(baseline)));
+        Gdiplus::Pen curve(Gdiplus::Color(225,129,113,224),static_cast<float>(std::lround(2.2*scale)));
+        curve.SetStartCap(Gdiplus::LineCapRound);curve.SetEndCap(Gdiplus::LineCapRound);curve.SetLineJoin(Gdiplus::LineJoinRound);
+        for(int i=1;i<7;++i)if(hasData[i]&&hasData[i-1])graphics.DrawLine(&curve,points[i-1],points[i]);
+        for(int i=0;i<7;++i) {
+            const float radius=static_cast<float>(px(i==6?4:3));
+            Gdiplus::SolidBrush dot(Gdiplus::Color(255,GetRValue(i==6?WARM:ACCENT),GetGValue(i==6?WARM:ACCENT),GetBValue(i==6?WARM:ACCENT)));
+            if(hasData[i])graphics.FillEllipse(&dot,points[i].X-radius,points[i].Y-radius,radius*2,radius*2);
+            else graphics.DrawEllipse(&curve,static_cast<float>(px(left+step*i+step/2))-radius,
+                static_cast<float>(px(baseline))-radius,radius*2,radius*2);
+        }
+    }
+    for(int i=0;i<7;++i) {
+        int cx=left+step*i+step/2;
+        text(dc,usageDayLabel(i),cx-step/2,baseline+5,step,16,i==6?INK:MUTED,9,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+    if(!v.usage.message.empty())text(dc,wide(v.usage.message),left+8,top+101,area-16,14,MUTED,10);
 }
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
@@ -876,9 +899,14 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
                         RECT client{};GetClientRect(hwnd,&client);int step=(logical(client.right)-48)/7;
                         if(y>=chart+24&&y<chart+102&&x>=22&&x<22+step*7) {
                             int day=(x-22)/step;auto dates=usageDates();auto found=v.usage.days.find(dates[day]);
-                            tooltipText=compactName(v.profile)+L"\n"+wide(dates[day])+L"（服务日期）\n"+
-                                (found==v.usage.days.end()?L"无数据":std::to_wstring(found->second)+L" Tokens");
-                            if(demo)tooltipText+=L"\n演示数据";
+                            long double peak=1;for(const auto& dateValue:dates){auto value=v.usage.days.find(dateValue);if(value!=v.usage.days.end())peak=std::max(peak,static_cast<long double>(value->second));}
+                            const int pointX=22+step*day+step/2;
+                            const int pointY=chart+82-(found!=v.usage.days.end()&&found->second>0?std::max(3,static_cast<int>(found->second/peak*42)):0);
+                            if(std::abs(x-pointX)<=12&&std::abs(y-pointY)<=12) {
+                                tooltipText=compactName(v.profile)+L"\n"+wide(dates[day])+L"（服务日期）\n"+
+                                    (found==v.usage.days.end()?L"无数据":std::to_wstring(found->second)+L" Tokens");
+                                if(demo)tooltipText+=L"\n演示数据";
+                            }
                         }
                     }
                 } else tooltipText=L"拖动顶栏移动；右键打开设置";

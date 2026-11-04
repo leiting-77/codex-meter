@@ -16,14 +16,23 @@ int main() {
         const COLORREF background=RGB(20,20,20),track=RGB(210,200,235),fill=RGB(240,210,130);
         auto backgroundBrush=CreateSolidBrush(background);
         RECT rect{0,0,128,128};
+        auto nearColor=[&](int x,int y,COLORREF expected) {
+            for(int dy=-1;dy<=1;++dy)for(int dx=-1;dx<=1;++dx) {
+                COLORREF actual=GetPixel(dc,x+dx,y+dy);
+                if(std::abs(static_cast<int>(GetRValue(actual))-static_cast<int>(GetRValue(expected)))<36&&
+                   std::abs(static_cast<int>(GetGValue(actual))-static_cast<int>(GetGValue(expected)))<36&&
+                   std::abs(static_cast<int>(GetBValue(actual))-static_cast<int>(GetBValue(expected)))<36)return true;
+            }
+            return false;
+        };
         for(int percent:{0,25,50,75,100}) {
             FillRect(dc,&rect,backgroundBrush);
             meter::drawQuotaRing(dc,64,64,40,5,percent,track,fill);
             // Quadrant midpoints avoid antialiasing and arc endpoint ambiguity.
-            CHECK((GetPixel(dc,92,36)==fill)==(percent>=25));
-            CHECK((GetPixel(dc,92,92)==fill)==(percent>=50));
-            CHECK((GetPixel(dc,36,92)==fill)==(percent>=75));
-            CHECK((GetPixel(dc,36,36)==fill)==(percent>=100));
+            CHECK(nearColor(91,38,fill)==(percent>=25));
+            CHECK(nearColor(91,90,fill)==(percent>=50));
+            CHECK(nearColor(38,90,fill)==(percent>=75));
+            CHECK(nearColor(38,38,fill)==(percent>=100));
             CHECK(GetPixel(dc,64,64)==background); // Full rings must never fill their center.
         }
         DeleteObject(backgroundBrush);

@@ -6,7 +6,7 @@ C++17 / Win32 / GDI. No embedded browser or interpreter.
 - src/platform.hpp: UTF-8, Windows handle ownership, atomic metadata persistence, Codex discovery.
 - src/rpc.hpp: bounded JSONL transport; explicit inherited handles; process tree Job Object; handshake; managed login; query; deadlines and cancellation.
 - src/worker.hpp: separate FIFO lanes for login and normal queries (at most two helpers); typed cancellation and fresh post-login sessions; results delivered through a mutex-protected event queue.
-- src/ui_geometry.hpp and ring_renderer.hpp: shared hit tests, edge/scroll geometry and tested GDI ring rendering.
+- src/ui_geometry.hpp and ring_renderer.hpp: shared hit tests, edge/scroll geometry and antialiased rounded ring rendering.
 - src/main.cpp: compact/detail renderer, native buttons, tray, profile actions, DPI/position persistence and refresh scheduling.
 - src/usage.hpp and usage_cache.hpp: validated daily token buckets, bounded per-profile atomic cache with account identity binding; no chat log ingestion.
 - src/surface_renderer.hpp: antialiased shape masks composited into the shared top-down premultiplied DIB surfaces, preserving fractional alpha at glass edges and respecting the content clip.

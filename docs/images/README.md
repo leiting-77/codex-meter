@@ -6,8 +6,8 @@
 | --- | --- |
 | compact.png | 640×284，紧凑模式，多账号短周期及周额度 |
 | compact-controls.png | 640×284，悬停红绿灯时的矢量符号 |
-| details.png | 760×1560，多账号完整详情与七天用量图 |
-| account-preview.png | 760×884，单账号详情、重置卡和七天用量图 |
+| details.png | 760×1504，多账号完整详情与七天趋势曲线 |
+| account-preview.png | 760×856，单账号详情、重置卡和七天趋势曲线 |
 | native-detail-preview.png | 380×442，100% 原生分辨率文字及红绿灯预览 |
 | edge-dock.png | 336×180，贴顶横向收纳，默认文字头像和双额度圆环 |
 | edge-dock-vertical.png | 168×336，左右贴边的纵向收纳 |
