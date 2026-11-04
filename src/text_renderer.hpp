@@ -1,10 +1,12 @@
 #pragma once
 #include "surface_renderer.hpp"
+#include "dwrite_renderer.hpp"
 #include <string>
 namespace meter {
 inline bool paintSurfaceText(HDC dc,const std::wstring& text,int x,int y,int width,int height,
                              HFONT font,COLORREF ink,UINT flags,COLORREF background,bool glass) {
     if(width<=0||height<=0||text.empty())return true;
+    if(writeTextEngine().paint(dc,text,x,y,width,height,font,ink,flags,background,glass))return true;
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-height;
     info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;

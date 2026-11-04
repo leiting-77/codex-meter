@@ -9,14 +9,14 @@ try {
     & $resourceCompiler --include-dir src --include-dir assets src/app.rc -O coff -o build/app-resource.o
     if ($LASTEXITCODE -ne 0) { throw 'Icon resource compilation failed' }
     $common = @('-std=c++17','-O2','-s','-Wall','-Wextra','-Wno-missing-field-initializers','-DUNICODE','-D_UNICODE','-DNOMINMAX','-D_WIN32_WINNT=0x0A00','-finput-charset=UTF-8','-fexec-charset=UTF-8','-static','-save-temps=obj')
-    & $compiler @common -municode -mwindows src/main.cpp build/app-resource.o -o build/codex_meter.exe -luser32 -lgdi32 -lshell32 -lole32 -luuid -lcomdlg32 -lcomctl32 -ldwmapi -lgdiplus
+    & $compiler @common -municode -mwindows src/main.cpp build/app-resource.o -o build/codex_meter.exe -luser32 -lgdi32 -lshell32 -lole32 -luuid -lcomdlg32 -lcomctl32 -ldwmapi -lgdiplus -ldwrite
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed' }
     if (!$SkipTests) {
         & $compiler @common tests/model_tests.cpp -o build/model_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Model test compilation failed' }
         & ./build/model_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Model tests failed' }
-        & $compiler @common tests/render_tests.cpp -o build/render_tests.exe -lgdi32 -luser32 -lshell32 -lole32 -luuid -lgdiplus
+        & $compiler @common tests/render_tests.cpp -o build/render_tests.exe -lgdi32 -luser32 -lshell32 -lole32 -luuid -lgdiplus -ldwrite
         if ($LASTEXITCODE -ne 0) { throw 'Rendering test compilation failed' }
         & ./build/render_tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Rendering tests failed' }

@@ -12,6 +12,7 @@ int main() {
     info.bmiHeader.biWidth=128;info.bmiHeader.biHeight=-128;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void* bits=nullptr;auto bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);auto old=SelectObject(dc,bitmap);
     try {
+        CHECK(meter::writeTextEngine().ready());
         const COLORREF background=RGB(20,20,20),track=RGB(210,200,235),fill=RGB(240,210,130);
         auto backgroundBrush=CreateSolidBrush(background);
         RECT rect{0,0,128,128};
@@ -54,8 +55,8 @@ int main() {
         for(double scale:{1.0,1.25,1.5,2.0}) {
             std::fill_n(static_cast<uint32_t*>(bits),128*128,tintRgb);
             HFONT label=CreateFontW(-static_cast<int>(12*scale),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
-            CHECK(meter::paintSurfaceText(dc,L"Codex 字",4,4,120,40,label,RGB(24,23,68),DT_SINGLELINE,tint,true));
+                OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI");
+            CHECK(meter::writeTextEngine().paint(dc,L"Codex 字",4,4,120,40,label,RGB(24,23,68),DT_SINGLELINE,tint,true));
             DeleteObject(label);
             bool inkFound=false,partialFound=false,valid=true;
             for(int i=0;i<128*128;++i) {

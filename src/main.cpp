@@ -69,10 +69,10 @@ std::map<std::pair<int,int>,HFONT> fonts;
 int px(int v){return static_cast<int>(std::lround(v*scale));}
 int logical(int v){return static_cast<int>(std::lround(v/scale));}
 HFONT font(int size,int weight=FW_NORMAL) {
-    size=std::max(10,size);
+    size=std::max(11,size);
     auto key=std::make_pair(size,weight);auto it=fonts.find(key);if(it!=fonts.end())return it->second;
     auto f=CreateFontW(-px(size),0,0,0,weight,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
+        CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI");
     fonts.emplace(key,f);return f;
 }
 void clearFonts(){for(auto& x:fonts)DeleteObject(x.second);fonts.clear();}
