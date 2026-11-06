@@ -58,6 +58,7 @@ RECT pendingDockRect{};
 std::string pressedRemove;
 HWND tooltip=nullptr;
 std::wstring tooltipText;
+POINT usagePointer{-1,-1};
 int hotRemove=-1;
 int hotButton=0;
 double scale=1;
@@ -166,7 +167,12 @@ void progress(HDC dc,int x,int y,int w,int h,const std::optional<double>& value,
 }
 void ringColor(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,bool old,COLORREF preferred) {
     auto color=old?(preferred==WARM?RGB(189,178,138):RGB(154,146,183)):preferred;
-    drawQuotaRing(dc,px(cx),px(cy),px(radius),px(4),value,TRACK,color);
+    const bool warm=preferred==WARM;
+    const COLORREF track=warm?RGB(235,225,200):RGB(224,215,237);
+    const COLORREF start=warm?RGB(249,215,128):RGB(173,139,237);
+    const COLORREF end=warm?RGB(226,173,66):RGB(123,93,216);
+    drawQuotaRing(dc,px(cx),px(cy),px(radius),px(6),value,track,
+        old?color:start,old?color:end,BG,glassActive);
 }
 void ring(HDC dc,int cx,int cy,int radius,const std::optional<double>& value,bool old) {
     ringColor(dc,cx,cy,radius,value,old,WARM);
@@ -401,11 +407,15 @@ void usageChart(HDC dc,const View& v,int top,int width) {
     const auto summary=knownCount?(knownCount==7?L"合计 ":L"已知合计 ")+tokenAmount(total):L"暂无数据";
     text(dc,summary,left+150,top+5,area-160,18,MUTED,9,FW_NORMAL,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
     std::array<Gdiplus::PointF,7> points{};std::array<bool,7> hasData{};
+    int hovered=-1;
     for(int i=0;i<7;++i) {
         int cx=left+step*i+step/2;auto it=v.usage.days.find(dates[i]);
         hasData[i]=it!=v.usage.days.end();
         const int height=hasData[i]&&it->second>0?std::max(3,static_cast<int>(it->second/peak*42)):0;
         points[i]=Gdiplus::PointF(static_cast<float>(px(cx)),static_cast<float>(px(baseline-height)));
+        if(usagePointer.x>=left+step*i&&usagePointer.x<left+step*(i+1)&&
+           usagePointer.y>=top+24&&usagePointer.y<baseline+21&&
+           usagePointer.y>=HEADER&&usagePointer.y<HEADER+viewContent)hovered=i;
     }
     {
         Gdiplus::Graphics graphics(dc);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -416,7 +426,7 @@ void usageChart(HDC dc,const View& v,int top,int width) {
         curve.SetStartCap(Gdiplus::LineCapRound);curve.SetEndCap(Gdiplus::LineCapRound);curve.SetLineJoin(Gdiplus::LineJoinRound);
         for(int i=1;i<7;++i)if(hasData[i]&&hasData[i-1])graphics.DrawLine(&curve,points[i-1],points[i]);
         for(int i=0;i<7;++i) {
-            const float radius=static_cast<float>(px(i==6?4:3));
+            const float radius=static_cast<float>(px(i==hovered?5:i==6?4:3));
             Gdiplus::SolidBrush dot(Gdiplus::Color(255,GetRValue(i==6?WARM:ACCENT),GetGValue(i==6?WARM:ACCENT),GetBValue(i==6?WARM:ACCENT)));
             if(hasData[i])graphics.FillEllipse(&dot,points[i].X-radius,points[i].Y-radius,radius*2,radius*2);
             else graphics.DrawEllipse(&curve,static_cast<float>(px(left+step*i+step/2))-radius,
@@ -427,7 +437,21 @@ void usageChart(HDC dc,const View& v,int top,int width) {
         int cx=left+step*i+step/2;
         text(dc,usageDayLabel(i),cx-step/2,baseline+5,step,16,i==6?INK:MUTED,9,i==6?FW_MEDIUM:FW_NORMAL,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
     }
-    if(!v.usage.message.empty())text(dc,wide(v.usage.message),left+8,top+101,area-16,14,MUTED,10);
+    if(hovered>=0) {
+        const auto value=v.usage.days.find(dates[hovered]);
+        std::wostringstream label;
+        if(value==v.usage.days.end())label<<L"—";
+        else if(value->second>0&&value->second<10000)label<<L"<0.01M";
+        else label<<std::fixed<<std::setprecision(2)<<value->second/1000000.0L<<L"M";
+        constexpr int labelWidth=72;
+        const int labelX=std::clamp(logical(static_cast<int>(points[hovered].X))-labelWidth/2,
+            left,left+area-labelWidth);
+        const int labelY=logical(static_cast<int>(points[hovered].Y))-22;
+        text(dc,label.str(),labelX,labelY,labelWidth,16,INK,11,FW_MEDIUM,
+            DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    } else if(!v.usage.message.empty()) {
+        text(dc,wide(v.usage.message),left+8,top+101,area-16,14,MUTED,10);
+    }
 }
 void detail(HDC dc,const View& v,int y,int w,int index) {
     int height=cardHeight(v);
@@ -492,15 +516,20 @@ void dockedPaint(HDC dc,int width,int height) {
         int cy=horizontal?34:34+i*84-scrollY;
         if((horizontal&&(cx+36<0||cx-36>width))||(!horizontal&&(cy+50<0||cy-30>height)))continue;
         const bool hasMain=main&&!main->weekly();
+        const int ringRadius=hasMain&&week?29:24;
+        const int disc=ringRadius*2;
+        paintSurfaceShape(dc,px(cx-ringRadius),px(cy-ringRadius),px(disc),px(disc),
+            0,RGB(233,226,240),CLR_INVALID,BG,glassActive,true);
         if(hasMain&&week) {
-            ringColor(dc,cx,cy,27,week->remaining,stale(v),ACCENT);
+            ringColor(dc,cx,cy,29,week->remaining,stale(v),ACCENT);
             ringColor(dc,cx,cy,19,main->remaining,stale(v),WARM);
         } else if(week) {
             ringColor(dc,cx,cy,24,week->remaining,stale(v),ACCENT);
         } else {
             ringColor(dc,cx,cy,24,hasMain?main->remaining:std::optional<double>{},stale(v),WARM);
         }
-        avatar(dc,cx,cy,9,avatarText(v.profile));
+        text(dc,avatarText(v.profile),cx-9,cy-9,18,18,INK,11,FW_MEDIUM,
+            DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         text(dc,percent(hasMain?main->remaining:(week?week->remaining:std::optional<double>{})),cx-30,cy+32,60,18,
             v.failed?LOW:INK,11,FW_MEDIUM,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         if(v.paused||v.failed||(main&&main->remaining&&*main->remaining<20)||(week&&week->remaining&&*week->remaining<20))
@@ -894,20 +923,10 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
                     if(!v.status.empty())tooltipText+=L"\n"+wide(v.status);
                     if(settings.docked)tooltipText+=L"\n内圈米黄：短周期；外圈淡紫：周额度\n点击展开，滚轮切换账号";
                     if(expanded&&!settings.docked) {
-                        int cardTop=HEADER+4-scrollY;for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+DETAIL_GAP;
-                        int chart=usageChartTop(v,cardTop),x=logical(p.x),y=logical(p.y);
-                        RECT client{};GetClientRect(hwnd,&client);int step=(logical(client.right)-48)/7;
-                        if(y>=chart+24&&y<chart+102&&x>=22&&x<22+step*7) {
-                            int day=(x-22)/step;auto dates=usageDates();auto found=v.usage.days.find(dates[day]);
-                            long double peak=1;for(const auto& dateValue:dates){auto value=v.usage.days.find(dateValue);if(value!=v.usage.days.end())peak=std::max(peak,static_cast<long double>(value->second));}
-                            const int pointX=22+step*day+step/2;
-                            const int pointY=chart+82-(found!=v.usage.days.end()&&found->second>0?std::max(3,static_cast<int>(found->second/peak*42)):0);
-                            if(std::abs(x-pointX)<=12&&std::abs(y-pointY)<=12) {
-                                tooltipText=compactName(v.profile)+L"\n"+wide(dates[day])+L"（服务日期）\n"+
-                                    (found==v.usage.days.end()?L"无数据":std::to_wstring(found->second)+L" Tokens");
-                                if(demo)tooltipText+=L"\n演示数据";
-                            }
-                        }
+                        int cardTop=HEADER+4-scrollY;
+                        for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+DETAIL_GAP;
+                        const int chart=usageChartTop(v,cardTop);
+                        if(logical(p.y)>=chart&&logical(p.y)<chart+USAGE_HEIGHT)tooltipText.clear();
                     }
                 } else tooltipText=L"拖动顶栏移动；右键打开设置";
             }
@@ -970,12 +989,29 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
             }
             return 0;
         }
+        const int x=logical(GET_X_LPARAM(lp)),y=logical(GET_Y_LPARAM(lp));
+        POINT nextUsagePointer{-1,-1};
+        if(expanded&&!settings.docked) {
+            const int index=accountAt(x,y);
+            if(index>=0) {
+                int cardTop=HEADER+4-scrollY;
+                for(int i=0;i<index;++i)cardTop+=cardHeight(views[i])+DETAIL_GAP;
+                const int chart=usageChartTop(views[index],cardTop);
+                if(y>=chart&&y<chart+USAGE_HEIGHT)nextUsagePointer={x,y};
+            }
+        }
+        if(nextUsagePointer.x!=usagePointer.x||nextUsagePointer.y!=usagePointer.y) {
+            if(usagePointer.x<0)SendMessageW(tooltip,TTM_POP,0,0);
+            usagePointer=nextUsagePointer;
+            InvalidateRect(hwnd,nullptr,FALSE);
+        }
         int found=removeAt(logical(GET_X_LPARAM(lp)),logical(GET_Y_LPARAM(lp)));
         if(found!=hotRemove){hotRemove=found;InvalidateRect(hwnd,nullptr,FALSE);}
         TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,hwnd,0};TrackMouseEvent(&track);
         return 0;
     }
     case WM_MOUSELEAVE:
+        if(usagePointer.x>=0){usagePointer={-1,-1};InvalidateRect(hwnd,nullptr,FALSE);}
         if(hotRemove!=-1){hotRemove=-1;InvalidateRect(hwnd,nullptr,FALSE);}return 0;
     case WM_ENTERSIZEMOVE:dragging=true;return 0;
     case WM_MOVING:{

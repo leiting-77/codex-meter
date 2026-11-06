@@ -5,13 +5,20 @@
 #undef wWinMain
 #include <iostream>
 
-void exportDemo(const fs::path& path,bool detailMode,int side) {
+void exportDemo(const fs::path& path,bool detailMode,int side,int hoverDay=-1) {
     expanded=detailMode;settings.docked=side!=0;settings.dockSide=side;
     totalContent=settings.docked?static_cast<int>(views.size())*84:contentHeight();
     viewContent=totalContent;scrollY=0;
     const int width=settings.docked?(side>=3?totalContent:84):(expanded?DETAIL_WIDTH:320);
     const int height=settings.docked?(side>=3?90:totalContent):HEADER+totalContent+(expanded?FOOTER:0);
     SetWindowPos(window,nullptr,0,0,px(width),px(height),SWP_NOZORDER|SWP_NOACTIVATE);
+    if(hoverDay>=0) {
+        const int step=(width-48)/7;
+        const int x=22+step*hoverDay+step/2;
+        const int y=usageChartTop(views.front(),HEADER+4)+68;
+        proc(window,WM_MOUSEMOVE,0,MAKELPARAM(px(x),px(y)));
+        if(usagePointer.x!=x||usagePointer.y!=y)throw std::runtime_error("Usage hover was not detected");
+    }
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=px(width);info.bmiHeader.biHeight=-px(height);
     info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -20,6 +27,7 @@ void exportDemo(const fs::path& path,bool detailMode,int side) {
     if(!dc||!bitmap)throw std::runtime_error("Cannot create export surface");
     auto old=SelectObject(dc,bitmap);
     paint(dc);
+    if(hoverDay>=0)proc(window,WM_MOUSELEAVE,0,0);
     auto control=[&](HWND child,int id,int x,int y,int w,int h) {
         int saved=SaveDC(dc);SetViewportOrgEx(dc,px(x),px(y),nullptr);
         DRAWITEMSTRUCT item{};item.CtlType=ODT_BUTTON;item.CtlID=id;item.hwndItem=child;
@@ -67,6 +75,7 @@ int wmain(int argc,wchar_t** argv) {
         exportDemo(output/L"account-preview.png",true,0);
         clearFonts();scale=1;hotButton=WindowClose;
         exportDemo(output/L"native-detail-preview.png",true,0);
+        exportDemo(output/L"token-hover-preview.png",true,0,3);
         DestroyWindow(window);clearFonts();Gdiplus::GdiplusShutdown(graphicsToken);CoUninitialize();
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}
